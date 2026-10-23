@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 
-DATA_ROOT_NAME = "legislatie-fiscala"
+DATA_ROOT_NAME = "legislatie-descarcata"
 
 # Folder names are prefixed with the pipeline step that writes into them.
 STEP_DIRS = {
@@ -14,7 +14,7 @@ DATA_SUBDIRS = tuple(STEP_DIRS.values())
 
 
 def get_default_data_dir() -> Path:
-    """Use ``SCRAPPER_DATA_DIR`` when set, otherwise ``<cwd>/legislatie-fiscala``."""
+    """Use ``SCRAPPER_DATA_DIR`` when set, otherwise ``<cwd>/legislatie-descarcata``."""
     env_dir = os.getenv("SCRAPPER_DATA_DIR")
     return (
         Path(env_dir).expanduser()

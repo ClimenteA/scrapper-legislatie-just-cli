@@ -92,11 +92,11 @@ def download(
     data_dir: Optional[Path] = typer.Option(
         None,
         "--data-dir",
-        help="Data root. Default: $SCRAPPER_DATA_DIR or <cwd>/legislatie-fiscala.",
+        help="Data root. Default: $SCRAPPER_DATA_DIR or <cwd>/legislatie-descarcata.",
     ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Debug logging."),
 ) -> None:
-    """Step 1: download printable HTML files into <cwd>/legislatie-fiscala/1-raw."""
+    """Step 1: download printable HTML files into <cwd>/legislatie-descarcata/1-raw."""
     _setup_logging(verbose)
 
     from .downloader import LegislatieJustDownloader
@@ -140,11 +140,11 @@ def clean(
     data_dir: Optional[Path] = typer.Option(
         None,
         "--data-dir",
-        help="Data root. Default: $SCRAPPER_DATA_DIR or <cwd>/legislatie-fiscala.",
+        help="Data root. Default: $SCRAPPER_DATA_DIR or <cwd>/legislatie-descarcata.",
     ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Debug logging."),
 ) -> None:
-    """Step 2: clean raw HTML and write semantic HTML files into <cwd>/legislatie-fiscala/2-clean."""
+    """Step 2: clean raw HTML and write semantic HTML files into <cwd>/legislatie-descarcata/2-clean."""
     _setup_logging(verbose)
 
     from .cleaner import LegislatieJustCleaner
@@ -182,7 +182,7 @@ def expand(
     data_dir: Optional[Path] = typer.Option(
         None,
         "--data-dir",
-        help="Data root. Default: $SCRAPPER_DATA_DIR or <cwd>/legislatie-fiscala.",
+        help="Data root. Default: $SCRAPPER_DATA_DIR or <cwd>/legislatie-descarcata.",
     ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Debug logging."),
 ) -> None:
@@ -239,7 +239,7 @@ def run_all(
     data_dir: Optional[Path] = typer.Option(
         None,
         "--data-dir",
-        help="Data root. Default: $SCRAPPER_DATA_DIR or <cwd>/legislatie-fiscala.",
+        help="Data root. Default: $SCRAPPER_DATA_DIR or <cwd>/legislatie-descarcata.",
     ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Debug logging."),
 ) -> None:
@@ -310,7 +310,7 @@ def paths(
     data_dir: Optional[Path] = typer.Option(
         None,
         "--data-dir",
-        help="Data root. Default: $SCRAPPER_DATA_DIR or <cwd>/legislatie-fiscala.",
+        help="Data root. Default: $SCRAPPER_DATA_DIR or <cwd>/legislatie-descarcata.",
     ),
 ) -> None:
     """Show the resolved data directories."""

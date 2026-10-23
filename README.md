@@ -91,11 +91,11 @@ export SCRAPPER_SOURCES_FILE=/path/to/sources.toml
 
 ## Data layout
 
-By default everything is stored under `legislatie-fiscala/` in the directory
+By default everything is stored under `legislatie-descarcata/` in the directory
 where you run the CLI. Each folder is prefixed with the step that writes it:
 
 ```text
-<current working directory>/legislatie-fiscala/
+<current working directory>/legislatie-descarcata/
 ├── 1-raw/       # step 1: downloaded printable HTML
 ├── 2-clean/     # step 2: cleaned semantic HTML
 └── 3-expanded/  # step 3: <slug>/ folders with HTML, MD and toc-<slug>.json
@@ -213,7 +213,7 @@ uv run scrapper-legislatie-just-cli expand [OPTIONS]
 Output per source:
 
 ```text
-legislatie-fiscala/3-expanded/<slug>/
+legislatie-descarcata/3-expanded/<slug>/
 ├── <number>-<slug>-<date>.html
 ├── <number>-<slug>-<date>.md
 └── toc-<slug>.json
@@ -237,7 +237,7 @@ uv run scrapper-legislatie-just-cli paths          # show data directories
 
 | Variable | Description |
 | -------- | ----------- |
-| `SCRAPPER_DATA_DIR` | Default data root (overridden by `--data-dir`). When unset, `<current working directory>/legislatie-fiscala` is used. |
+| `SCRAPPER_DATA_DIR` | Default data root (overridden by `--data-dir`). When unset, `<current working directory>/legislatie-descarcata` is used. |
 | `SCRAPPER_LOG_LEVEL` | `DEBUG`, `INFO`, `WARNING`, ... Default: `INFO`. |
 | `SCRAPPER_LOG_FILE` | Optional log file path. Rotates at 100 MB. |
 
