@@ -1,0 +1,378 @@
+# Sources downloaded by scrapper-legislatie-just-cli.
+#
+# Each [[sources]] entry is validated by scrapper_legislatie_just.sources.Sursa.
+# The document URL is derived from numar_link as:
+#   https://legislatie.just.ro/Public/DetaliiDocument/<numar_link>
+#
+# Required keys: numar_link (int), nume (str), slug (str), descriere (str).
+
+[[sources]]
+numar_link = 307832
+nume = "CODUL FISCAL (Legea nr. 227/2015)"
+slug = "codul-fiscal"
+descriere = """
+Codul Fiscal stabilește toate tipurile de impozite și taxe din România: impozit pe venit, TVA, impozit pe
+profit,
+contribuții sociale, accize și taxe locale, împreună cu bazele de calcul, cote, scutiri și obligații
+declarative.
+"""
+
+[[sources]]
+numar_link = 307012
+nume = "CODUL DE PROCEDURĂ FISCALĂ (Legea nr. 207/2015)"
+slug = "cod-procedura-fiscala"
+descriere = """
+Reglementează procedurile fiscale: declarare, control, inspecție fiscală, executare silită, contestații,
+termene, penalități și relația contribuabilului cu ANAF.
+"""
+
+[[sources]]
+numar_link = 307847
+nume = "Norme metodologice de aplicare a Codului fiscal"
+slug = "norme-metodologice-de-aplicare-a-codului-fiscal"
+descriere = """
+Detaliază modul concret de aplicare a Codului Fiscal, cu exemple, clarificări și interpretări practice
+pentru
+impozite, TVA, contribuții și tratamente fiscale specifice.
+"""
+
+[[sources]]
+numar_link = 286044
+nume = "NORME GENERALE din 5 noiembrie 2015 de întocmire și utilizare a documentelor financiar-contabile (Anexa nr.1)"
+slug = "norme-generale-de-utilizare-a-documentelor-financiar-contabile-anexa-1"
+descriere = """
+Acest document stabilește regulile obligatorii pentru întocmirea, utilizarea și arhivarea documentelor financiar-contabile în România, detaliind elementele obligatorii pe care trebuie să le conțină un document justificativ pentru a fi valabil. Acesta reglementează modul de completare a registrelor contabile (Jurnal, Inventar, Cartea Mare), procedurile de corectare a erorilor și termenele legale de păstrare a documentelor în arhivă. De asemenea, normele prevăd pașii necesari pentru reconstituirea documentelor pierdute și criteriile tehnice pe care trebuie să le îndeplinească software-urile de contabilitate.
+"""
+
+[[sources]]
+numar_link = 164320
+nume = "OMFP nr. 1.802/2014 – Reglementări contabile"
+slug = "reglementari-contabile"
+descriere = """
+Acest act normativ reprezintă „biblia” contabilității românești, stabilind regulile detaliate pentru întocmirea situațiilor financiare anuale, atât pentru firme individuale, cât și pentru grupuri de societăți (situații consolidate). Documentul definește principiile contabile, metodele de evaluare a activelor și datoriilor, precum și formatele obligatorii pentru bilanț și contul de profit și pierdere. De asemenea, obligă entitățile să își dezvolte politici contabile proprii și reglementează tratamentul contabil pentru situații specifice, cum ar fi asocierile în participație sau activitatea subunităților fără personalitate juridică.
+"""
+
+[[sources]]
+numar_link = 303279
+nume = "REGLEMENTĂRI CONTABILE din 29 decembrie 2014 privind situațiile financiare anuale individuale și situațiile financiare anuale consolidate"
+slug = "reglementari-contabile-situatii-financiare-anuale"
+descriere = """
+Acest document reprezintă cadrul legal fundamental pentru contabilitatea societăților comerciale din România, stabilind regulile de „alfabetizare” și raportare financiară.
+Iată ce găsești, pe scurt, în acest text:
+
+Reguli de Evaluare: Explică exact cum se calculează valoarea bunurilor din firmă în trei momente cheie: când le cumperi (intrare), la inventar și când le vinzi/casezi (ieșire).
+
+Structura Raportărilor: Definește formatul obligatoriu pentru Bilanț și Contul de Profit și Pierdere, dar și pentru Notele explicative, în funcție de mărimea firmei (micro, mici, mijlocii sau mari).
+
+Ghidul Contabilului: Conține Planul de Conturi General (lista tuturor conturilor utilizate) și Funcțiunea Conturilor (instrucțiuni clare despre cum se folosește fiecare cont, ce se scrie pe debit și ce pe credit).
+
+Transparență și Etică: Include capitole moderne despre raportarea durabilității (sustenabilitate), raportarea impozitului pe profit și regulile de audit, asigurând că informațiile financiare sunt calitative, comparabile și oneste.
+
+Este, practic, manualul tehnic care transformă orice activitate economică într-un limbaj financiar standardizat, recunoscut de stat și de bănci.
+"""
+
+[[sources]]
+numar_link = 303281
+nume = "REGLEMENTĂRILE CONTABILE din 12 decembrie 2016 conforme cu Standardele Internaționale de Raportare Financiară (Anexa nr. 1)"
+slug = "reglementari-contabile-standarde-internationale-raportare-financiara-anexa-1"
+descriere = """
+Acest document reprezintă cadrul de raportare premium (IFRS) aplicabil în România, destinat în special companiilor mari și celor listate la bursă, care necesită o transparență internațională.
+
+Iată ce găsești, pe scurt, în acest text:
+
+Raportări Complexe: Detaliază elaborarea situațiilor financiare anuale și consolidate conform IFRS, incluzând Raportul Administratorilor și obligația de a raporta plăți către guverne sau impozitul pe profit pe regiuni.
+
+Sustenabilitate și Viitor: Conține reglementări de ultimă oră privind raportarea de durabilitate (ESG) și digitalizarea raportării prin formatul electronic unic (ESAP).
+
+Reguli de Contabilizare: Oferă instrucțiuni specifice pentru active, provizioane, capitaluri proprii și, esențial, pentru repartizarea profitului și corectarea erorilor contabile.
+
+Instrumente de Lucru: Include un Plan de conturi și Funcțiunea conturilor adaptate standardelor internaționale, asigurând o punte între contabilitatea locală și cea globală.
+
+Documentul funcționează ca un set de reguli riguroase care transformă datele contabile într-un limbaj financiar universal, facilitând investițiile străine și auditul extern de înalt nivel.
+"""
+
+[[sources]]
+numar_link = 196268
+nume = "LEGEA nr. 270 din 22 decembrie 2017 privind prevenirea săvârșirii de contravenții"
+slug = "lege-prevenire-contraventii"
+descriere = """
+Prevede măsuri preventive și proceduri de avertizare pentru contravenții, oferind posibilitatea
+remedierii unor abateri fără aplicarea imediată a sancțiunilor.
+"""
+
+[[sources]]
+numar_link = 91808
+nume = "OUG nr. 44/2008 – desfășurarea activităților economice de către PFA, II, IF"
+slug = "pfa-ii-if-desfasurare-activitati-economice"
+descriere = """
+Reglementează modul de desfășurare a activităților economice pentru PFA, II și IF: autorizare,
+organizare, obligații fiscale și contabile.
+"""
+
+[[sources]]
+numar_link = 216157
+nume = "Legea nr. 129/2019 – prevenirea și combaterea spălării banilor"
+slug = "lege-prevenirea-si-combaterea-spalarii-banilor"
+descriere = """
+Conține obligații privind identificarea clienților, raportarea tranzacțiilor și prevenirea spălării
+banilor și finanțării terorismului pentru firme și profesii reglementate.
+"""
+
+[[sources]]
+numar_link = 58613
+nume = "HG nr. 2139/2004 – Catalog mijloace fixe"
+slug = "catalog-mijloace-fixe"
+descriere = """
+Conține catalogul mijloacelor fixe și duratele normale de funcționare utilizate pentru calculul
+amortizării fiscale și contabile.
+"""
+
+[[sources]]
+numar_link = 304533
+nume = "LEGE nr. 31 din 16 noiembrie 1990 privind societățile"
+slug = "legea-societatilor"
+descriere = """
+Reglementează funcționarea societăților comerciale: înființare, administrare, capital social,
+asociați, dividende și dizolvare.
+"""
+
+[[sources]]
+numar_link = 282063
+nume = "ORDIN nr. 377 din 17 aprilie 2024 privind actualizarea Clasificării activităților din economia națională - CAEN"
+slug = "caen-rev-3"
+descriere = """
+Actualizează Clasificarea activităților din economia națională (CAEN), utilizată pentru autorizarea
+firmelor și raportările fiscale și statistice.
+"""
+
+[[sources]]
+numar_link = 1576
+nume = "Legea contabilității nr. 82/1991"
+slug = "legea-contabilitatii"
+descriere = """
+Stabilește principiile de bază ale contabilității, obligațiile entităților privind evidența contabilă
+și întocmirea situațiilor financiare.
+"""
+
+[[sources]]
+numar_link = 785
+nume = "Legea nr. 26/1990 – Registrul Comerțului"
+slug = "legea-registrul-comertului"
+descriere = """
+Reglementează funcționarea Registrului Comerțului, înregistrarea firmelor și publicitatea
+actelor și faptelor comerciale.
+"""
+
+[[sources]]
+numar_link = 172761
+nume = "Legea nr. 85/2014 – procedura insolvenței"
+slug = "lege-procedura-insolventei"
+descriere = """
+Stabilește procedura insolvenței pentru firme și persoane juridice: reorganizare,
+faliment și drepturile creditorilor.
+"""
+
+[[sources]]
+numar_link = 63590
+nume = "Legea nr. 241/2005 – prevenirea și combaterea evaziunii fiscale"
+slug = "lege-prevenirea-si-combaterea-evaziunii-fiscale"
+descriere = """
+Prevede infracțiunile și sancțiunile aplicabile pentru evaziune fiscală, precum și
+măsuri de prevenire și combatere.
+"""
+
+[[sources]]
+numar_link = 304522
+nume = "OUG nr. 193/2002 – sisteme moderne de plată (POS, card)"
+slug = "oug-sisteme-moderne-de-plata-pos-card"
+descriere = """
+Reglementează utilizarea sistemelor moderne de plată: carduri, POS, instrumente
+electronice și obligațiile comercianților.
+"""
+
+[[sources]]
+numar_link = 167088
+nume = "Legea nr. 70/2015 – disciplina financiară (plăți numerar)"
+slug = "lege-disciplina-financiara-plati-numerar"
+descriere = """
+Stabilește limitele și regulile privind plățile și încasările în numerar între
+persoane fizice și juridice.
+"""
+
+[[sources]]
+numar_link = 247243
+nume = "OUG nr. 120/2021 – factura electronică RO e-Factura"
+slug = "oug-factura-electronica-e-factura"
+descriere = """
+Reglementează sistemul național de facturare electronică RO e-Factura, obligațiile
+de transmitere și validare a facturilor.
+"""
+
+[[sources]]
+numar_link = 248326
+nume = "ORDIN ANAF nr. 1.783/2021 raportarea SAF-T (D406)"
+slug = "ordin-anaf-raportarea-saf-t-d406"
+descriere = """
+Stabilește structura și regulile de raportare SAF-T (D406), inclusiv tipurile de date
+contabile și fiscale transmise către ANAF.
+"""
+
+[[sources]]
+numar_link = 17431
+nume = "OUG nr. 28/1999 privind obligația operatorilor economici de a utiliza aparate de marcat electronice fiscale"
+slug = "oug-obligatia-utilizarii-aparatelor-de-marcat-fiscale"
+descriere = """
+Reglementează obligația utilizării caselor de marcat electronice fiscale și
+transmiterea datelor către ANAF.
+"""
+
+[[sources]]
+numar_link = 253801
+nume = "OUG nr. 41/2022 pentru instituirea Sistemului național privind monitorizarea transporturilor rutiere de bunuri RO e-Transport"
+slug = "oug-monitorizarea-transporturilor-rutiere-ro-e-transport"
+descriere = """
+Instituie sistemul RO e-Transport pentru monitorizarea transporturilor rutiere de bunuri
+cu risc fiscal ridicat.
+"""
+
+[[sources]]
+numar_link = 267714
+nume = "ORDIN ANAF nr. 170/2015 pentru aprobarea Reglementărilor contabile privind contabilitatea în partidă simplă"
+slug = "reglementari-contabile-pardida-simpla"
+descriere = """
+Reglementează contabilitatea în partidă simplă pentru persoane fizice, PFA și profesii
+liberale.
+"""
+
+[[sources]]
+numar_link = 267715
+nume = "REGLEMENTĂRI CONTABILE privind contabilitatea în partidă simplă anexă"
+slug = "reglementari-contabile-pardida-simpla-anexa"
+descriere = """
+Conține regulile detaliate de aplicare a contabilității în partidă simplă și structura
+registrelor obligatorii.
+"""
+
+[[sources]]
+numar_link = 196396
+nume = "ORDIN ANAF nr. 3.254/2017 privind Registrul de evidență fiscală pentru persoanele fizice"
+slug = "registrul-de-evidenta-fiscala-pfa-ii-if"
+descriere = """
+Reglementează Registrul de evidență fiscală pentru persoane fizice, utilizat la calculul
+venitului net impozabil.
+"""
+
+[[sources]]
+numar_link = 286045
+nume = "NORME SPECIFICE de utilizare a documentelor financiar-contabile NOMENCLATORUL documentelor financiar-contabile"
+slug = "nomeclatorul-documentelor-financiar-contabile"
+descriere = """
+Definește nomenclatorul documentelor financiar-contabile și regulile specifice
+de utilizare pentru fiecare tip de document.
+"""
+
+[[sources]]
+numar_link = 286046
+nume = "ANEXA privind modelele documentelor financiar-contabile (Anexa nr. 3)"
+slug = "modele-documente-financiar-contabile-anexa-3"
+descriere = """
+Include modelele standardizate ale documentelor financiar-contabile utilizate în
+activitatea economică.
+"""
+
+[[sources]]
+numar_link = 128647
+nume = "CODUL MUNCII din 24 ianuarie 2003 (Legea nr. 53/2003)"
+slug = "codul-muncii"
+descriere = """
+Codul muncii reglementează relațiile de muncă dintre angajatori și salariați, stabilind drepturile și obligațiile ambelor părți, inclusiv încheierea, executarea și încetarea contractului individual de muncă. Acesta definește reguli privind timpul de lucru, concediile, salarizarea, sănătatea și securitatea în muncă, precum și protecția angajaților. De asemenea, stabilește cadrul legal pentru controlul muncii și soluționarea conflictelor de muncă.
+"""
+
+[[sources]]
+numar_link = 295995
+nume = "HOTĂRÂRE nr. 295 din 27 martie 2025 privind Registrul general de evidență a salariaților - REGES-ONLINE"
+slug = "reges-online-registrul-general-de-evidenta-a-salariatilor"
+descriere = """
+Stabilește modul de înregistrare, transmitere și gestionare online a datelor privind contractele individuale de muncă (încheiere, modificare, suspendare și încetare). Actul definește obligațiile angajatorilor de a completa registrul electronic și introduce reguli, termene și sancțiuni pentru raportarea corectă a relațiilor de muncă către autorități.
+"""
+
+[[sources]]
+numar_link = 124331
+nume = "OUG nr. 111/2010 - privind concediul și indemnizația lunară pentru creșterea copiilor"
+slug = "oug-concediu-crestere-copil"
+descriere = """
+Reglementează acordarea concediului și indemnizației pentru creșterea copilului: condiții de eligibilitate,
+durata concediului, cuantumul indemnizației, situațiile de suspendare sau încetare și compatibilitatea cu alte venituri.
+"""
+
+[[sources]]
+numar_link = 268667
+nume = "NORME METODOLOGICE HG nr. 52/2011 – norme de aplicare OUG 111/2010"
+slug = "norme-aplicare-concediu-crestere-copil"
+descriere = """
+Detaliază modul de aplicare a concediului pentru creșterea copilului, inclusiv procedura de acordare,
+documentele necesare și cazurile concrete privind realizarea de venituri în perioada concediului.
+"""
+
+[[sources]]
+numar_link = 33919
+nume = "Legea nr. 76/2002- privind sistemul asigurărilor pentru șomaj și stimularea ocupării forței de muncă"
+slug = "lege-somaj"
+descriere = """
+Reglementează acordarea indemnizației de șomaj, condițiile de eligibilitate, contribuțiile și drepturile
+persoanelor asigurate în sistemul de șomaj.
+"""
+
+[[sources]]
+numar_link = 66305
+nume = "OUG nr. 158/2005 - privind concediile și indemnizațiile de asigurări sociale de sănătate"
+slug = "oug-concedii-medicale"
+descriere = """
+Reglementează concediile medicale și indemnizațiile aferente (boală, maternitate, risc maternal),
+inclusiv condițiile de acordare și calculul indemnizațiilor.
+"""
+
+[[sources]]
+numar_link = 71139
+nume = "Legea nr. 95/2006 – reforma în domeniul sănătății"
+slug = "lege-sanatate"
+descriere = """
+Reglementează sistemul de sănătate din România, inclusiv asigurările sociale de sănătate,
+drepturile asiguraților și modul de organizare al CNAS.
+"""
+
+[[sources]]
+numar_link = 276927
+nume = "Legea nr. 360/2023 – sistemul public de pensii"
+slug = "lege-pensii"
+descriere = """
+Reglementează sistemul public de pensii, contribuțiile de asigurări sociale și drepturile
+persoanelor asigurate, inclusiv pentru PFA și alte forme independente.
+"""
+
+[[sources]]
+numar_link = 199418
+nume = "Legea nr. 81/2018 – reglementarea activității de telemuncă"
+slug = "lege-telemunca"
+descriere = """
+Reglementează desfășurarea activității în regim de telemuncă și implicațiile juridice și fiscale
+ale acesteia pentru angajatori și angajați.
+"""
+
+[[sources]]
+numar_link = 183328
+nume = "Legea nr. 196/2016 – venitul minim de incluziune"
+slug = "lege-venit-minim-incluziune"
+descriere = """
+Reglementează acordarea ajutoarelor sociale pentru persoanele cu venituri reduse,
+inclusiv condițiile de eligibilitate și tipurile de beneficii.
+"""
+
+[[sources]]
+numar_link = 77815
+nume = "Legea nr. 448/2006 – protecția persoanelor cu handicap"
+slug = "lege-protectia-persoanelor-cu-handicap"
+descriere = """
+Reglementează drepturile și beneficiile persoanelor cu handicap, inclusiv facilități fiscale
+și indemnizații specifice.
+"""
