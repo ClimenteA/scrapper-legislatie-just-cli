@@ -1,8 +1,10 @@
 import json
 import shutil
+from datetime import date
 from pathlib import Path
 
 import pytest
+from bs4 import BeautifulSoup
 from typer.testing import CliRunner
 
 from scrapper_legislatie_just.cli import app
@@ -142,6 +144,21 @@ def test_downloader_keeps_only_latest_consolidation(tmp_path, monkeypatch):
     assert latest is not None
     assert latest.data_consolidarii == "2024-06-20"
     assert downloader.download()["downloaded"] == 1
+
+
+def test_downloader_falls_back_to_current_date_without_history(tmp_path, monkeypatch):
+    """Sources without a consolidation history must still yield a date-only value."""
+    downloader = LegislatieJustDownloader(surse=[_source()], data_dir=tmp_path)
+    monkeypatch.setattr(
+        downloader,
+        "get_bs_soup",
+        lambda url: BeautifulSoup("<html><body></body></html>", "html5lib"),
+    )
+
+    latest = downloader.preia_cel_mai_recent_link(_source().link)
+
+    assert latest is not None
+    assert latest.data_consolidarii == date.today().isoformat()
 
 
 def test_downloader_all_versions_flag(tmp_path, monkeypatch):

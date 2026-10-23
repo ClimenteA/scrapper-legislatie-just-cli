@@ -104,7 +104,7 @@ class LegislatieJustDownloader:
     def preia_linkuri_consolidate(self, main_url: str) -> list[LinkuriConsolidate]:
         default_result = [
             LinkuriConsolidate(
-                link_sursa=main_url, data_consolidarii=datetime.today().isoformat()
+                link_sursa=main_url, data_consolidarii=date.today().isoformat()
             )
         ]
 
