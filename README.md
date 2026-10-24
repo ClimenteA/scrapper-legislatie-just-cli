@@ -1,147 +1,36 @@
-# scrapper-legislatie-just-cli
+# Legislatie Just CLI
 
-A small standalone Python CLI that downloads and processes legislatie.just.ro pages.
+Download Romanian laws from `legislatie.just.ro`, keep a local copy, and search
+it offline. No account, API key, or cloud service is required. The search index
+is built on your computer.
 
-| Step | Command    | What it does                                                        |
-| ---- | ---------- | ------------------------------------------------------------------- |
-| 1    | `download` | Downloads the latest printable HTML consolidation per source           |
-| 2    | `clean`    | Normalizes the raw HTML and writes semantic, readable HTML           |
-| 3    | `expand`   | Groups files by source, builds a TOC JSON and converts HTML to `.md` |
-| 4    | `process`  | Builds the SQLite/FTS5 legal index and the OpenCode instructions     |
+## Quick start
 
+### 1. Install
 
-## Requirements
+You need:
 
 - Python 3.11+
 - [uv](https://docs.astral.sh/uv/)
-- **Required:** [`monolith`](https://github.com/Y2Z/monolith) on `PATH`.
-  The download step refuses to run without it.
+- [`monolith`](https://github.com/Y2Z/monolith/releases) available on `PATH`
 
-Docling is installed as a normal dependency; it is used by `expand` for the
-HTML → Markdown conversion and by `clean` for OCR of base64 images.
-
-## Install
+Install the program:
 
 ```bash
 cd scrapper-legislatie-just-cli
 uv sync
 ```
 
-This creates `.venv/` and installs all dependencies, including `typer`,
-`requests`, `beautifulsoup4`, `docling` and `loguru`.
-
-Verify the installation:
+Check that it works:
 
 ```bash
 monolith --version
 uv run scrapper-legislatie-just-cli --help
-uv run scrapper-legislatie-just-cli list-sources
 ```
 
-## Sources configuration
+### 2. Try one law first
 
-The source list is no longer hard-coded in Python. It lives in
-[`src/scrapper_legislatie_just/sources.toml`](src/scrapper_legislatie_just/sources.toml):
-
-```toml
-[[sources]]
-numar_link = 1576
-nume = "Legea contabilitatii nr. 82/1991"
-slug = "legea-contabilitatii"
-descriere = """
-Stabileste principiile de baza ale contabilitatii...
-"""
-```
-
-The document URL is derived automatically:
-
-```text
-https://legislatie.just.ro/Public/DetaliiDocument/<numar_link>
-```
-
-TOML was chosen over YAML because:
-
-- Python 3.11+ can read it with the standard-library `tomllib` (no extra
-  dependency),
-- it supports comments and clean multi-line strings for the descriptions,
-- it is not indentation-sensitive, which makes large source lists less
-  error-prone to edit.
-
-If a `sources.toml` exists in the directory where you run the CLI, it is used
-automatically instead of the packaged file. This is the easiest way to work
-with your own source list:
-
-```text
-my-project/
-├── sources.toml          # picked up automatically
-└── ...
-```
-
-The resolution order is:
-
-1. explicit path passed to `load_sources()`
-2. `SCRAPPER_SOURCES_FILE`
-3. `./sources.toml` in the current working directory
-4. the `sources.toml` packaged with the CLI
-
-A custom file can also be selected explicitly with:
-
-```bash
-export SCRAPPER_SOURCES_FILE=/path/to/sources.toml
-```
-
-## Data layout
-
-By default everything is stored under `legislatie-descarcata/` in the directory
-where you run the CLI. Each folder is prefixed with the step that writes it:
-
-```text
-<current working directory>/legislatie-descarcata/
-├── 1-raw/       # step 1: downloaded printable HTML
-├── 2-clean/     # step 2: cleaned semantic HTML
-├── 3-expanded/  # step 3: <slug>/ folders with HTML, MD and toc-<slug>.json
-└── 4-processed/ # step 4: law.db (SQLite/FTS5), graph.db and catalog.json
-```
-
-Use `--data-dir /some/path` on any command to use another root, or set:
-
-```bash
-export SCRAPPER_DATA_DIR=/some/path
-```
-
-Show the resolved paths:
-
-```bash
-uv run scrapper-legislatie-just-cli paths
-```
-
-## Quick start
-
-Download only one document from one source (useful while testing, because
-legislatie.just.ro has bot protection and rate limits):
-
-```bash
-uv run scrapper-legislatie-just-cli download \
-  --slug legea-contabilitatii \
-  --limit 1
-```
-
-Clean the downloaded file (skip OCR if you do not need images):
-
-```bash
-uv run scrapper-legislatie-just-cli clean \
-  --slug legea-contabilitatii \
-  --limit 1 \
-  --no-ocr
-```
-
-Expand to Markdown and build the TOC:
-
-```bash
-uv run scrapper-legislatie-just-cli expand --slug legea-contabilitatii
-```
-
-Or run all four steps in one go:
+This downloads one document, converts it, and builds the search index:
 
 ```bash
 uv run scrapper-legislatie-just-cli run-all \
@@ -150,158 +39,179 @@ uv run scrapper-legislatie-just-cli run-all \
   --no-ocr
 ```
 
-## Commands
+Use `--no-ocr` unless the document contains scanned images.
 
-### `download` (step 1)
+### 3. Search it
 
 ```bash
-uv run scrapper-legislatie-just-cli download [OPTIONS]
+uv run scrapper-legislatie-just-cli search "inventariere"
+uv run scrapper-legislatie-just-cli context "cand se face inventarierea"
+uv run scrapper-legislatie-just-cli article legea-contabilitatii 7
 ```
 
-| Option | Description |
-| ------ | ----------- |
-| `-s, --slug TEXT` | Source slug. Repeat the option for several sources. Default: all sources. |
-| `-n, --limit INT` | Maximum number of documents to download. |
-| `-f, --force` | Download even if a file with the same document version exists. |
-| `--all-versions` | Download every consolidation from the last 5 years instead of only the latest. |
-| `--dry-run` | Discover URLs and print them without writing files. |
-| `--data-dir PATH` | Data root. |
-| `-v, --verbose` | Debug logging. |
+Results contain a `file:///...` link. Copy it into your browser to open the
+original HTML at the exact article or paragraph.
 
-The downloader looks at the consolidation history and keeps only the newest
-version of each document. It then finds the "Forma printabilă" link and saves
-files as:
+### 4. Build the full library
+
+```bash
+uv run scrapper-legislatie-just-cli run-all --no-ocr
+```
+
+The full download can take a while and `legislatie.just.ro` may rate-limit you.
+If it stops, run the same command again; existing files are skipped.
+
+## Everyday commands
+
+| Task | Command |
+|---|---|
+| List available acts | `uv run scrapper-legislatie-just-cli list-sources` |
+| Download and update everything | `uv run scrapper-legislatie-just-cli run-all --no-ocr` |
+| Search all indexed laws | `uv run scrapper-legislatie-just-cli search "concediu de odihna"` |
+| Search inside one act | `uv run scrapper-legislatie-just-cli search "concediu" --doc codul-muncii` |
+| Get an evidence pack for a question | `uv run scrapper-legislatie-just-cli context "cate zile de concediu de odihna"` |
+| Read one article | `uv run scrapper-legislatie-just-cli article codul-muncii 145` |
+| List indexed acts | `uv run scrapper-legislatie-just-cli docs` |
+| Show data locations | `uv run scrapper-legislatie-just-cli paths` |
+
+Use `--help` after any command to see its options.
+
+## What each step does
+
+| Step | Command | What it does |
+|---|---|---|
+| 1 | `download` | Downloads the latest printable HTML from `legislatie.just.ro` |
+| 2 | `clean` | Cleans the HTML and makes it readable |
+| 3 | `expand` | Creates one folder per act with HTML, Markdown, and a table of contents |
+| 4 | `process` | Builds the local search index and citation graph |
+
+`run-all` runs all four steps in order.
+
+## Using it with an AI assistant
+
+After `process`, the folder `legislatie-descarcata/4-processed/` contains the
+index and a generated `AGENTS.md` with instructions for the assistant.
+
+The generated instructions expect the MCP tools (`legislatie_search`,
+`legislatie_context`, and so on). Connect the MCP server first:
+
+```bash
+uv run python -m scrapper_legislatie_just.mcp_server
+```
+
+Then open `legislatie-descarcata/4-processed/` in Kilo or OpenCode and ask legal
+questions in Romanian. Mention the act name if you know it, for example:
+`In Codul muncii, cate zile de concediu de odihna am?`
+
+The assistant is instructed to search the index, cite the exact HTML link, and
+check related articles instead of answering from memory.
+
+If you do not use MCP, the assistant can still run the CLI commands from this
+README, but it will not automatically get the index tools described in
+`AGENTS.md`.
+
+## Where the files are
+
+Everything is stored in `legislatie-descarcata/` in the directory where you run
+the command:
 
 ```text
-<numar_link>-<slug>-<YYYY-MM-DD>.html
+legislatie-descarcata/
+├── 1-raw/        downloaded HTML
+├── 2-clean/      cleaned HTML
+├── 3-expanded/   HTML, Markdown, and TOC JSON per act
+└── 4-processed/  search index, citation graph, AGENTS.md
 ```
 
-Pass `--all-versions` to download every consolidation from the last 5 years.
-A local file for an older consolidation does not block downloading a newer one.
+Keep `3-expanded/` and `4-processed/`: result links point to the HTML files in
+`3-expanded/`, and the index lives in `4-processed/`.
 
-### `clean` (step 2)
+To store the library somewhere else:
 
 ```bash
-uv run scrapper-legislatie-just-cli clean [OPTIONS]
+uv run scrapper-legislatie-just-cli run-all --data-dir /path/to/library
 ```
 
-| Option | Description |
-| ------ | ----------- |
-| `-s, --slug TEXT` | Source slug (repeatable). |
-| `-n, --limit INT` | Maximum number of files to clean. |
-| `-f, --force` | Re-clean files that already exist in `2-clean/`. |
-| `--ocr / --no-ocr` | Run OCR on base64 images. Default: `--ocr`. |
-| `--data-dir PATH` | Data root. |
-| `-v, --verbose` | Debug logging. |
+Every command accepts the same `--data-dir`.
 
-The cleaner removes abrogated content, unused attributes and empty markup,
-injects CSS and a table of contents, resolves internal article references,
-converts the structure to semantic HTML and adds a source header.
+## Common problems
 
-### `expand` (step 3)
+**`monolith` is missing**
 
-```bash
-uv run scrapper-legislatie-just-cli expand [OPTIONS]
-```
+The download step will not run. Install `monolith` from its releases page and
+make sure `monolith --version` works in the same terminal.
 
-| Option | Description |
-| ------ | ----------- |
-| `-s, --slug TEXT` | Source slug (repeatable). |
-| `-n, --limit INT` | Maximum number of HTML → Markdown conversions. |
-| `-f, --force` | Re-copy and re-convert existing files. |
-| `--data-dir PATH` | Data root. |
-| `-v, --verbose` | Debug logging. |
+**Downloads fail or stop**
 
-Output per source:
-
-```text
-legislatie-descarcata/3-expanded/<slug>/
-├── <number>-<slug>-<date>.html
-├── <number>-<slug>-<date>.md
-└── toc-<slug>.json
-```
-
-### `process` (step 4)
-
-```bash
-uv run scrapper-legislatie-just-cli process [OPTIONS]
-```
-
-| Option | Description |
-| ------ | ----------- |
-| `-s, --slug TEXT` | Source slug (repeatable). |
-| `-n, --limit INT` | Maximum number of documents to index. |
-| `-f, --force` | Rebuild even when the source files are unchanged. |
-| `--data-dir PATH` | Data root. |
-| `-v, --verbose` | Debug logging. |
-
-Builds `4-processed/law.db` (SQLite + FTS5/BM25 nodes), the citation graph in
-`4-processed/graph.db`, `4-processed/catalog.json` and the OpenCode
-instructions file `4-processed/AGENTS.md`. The build is skipped automatically
-when nothing changed; use `--force` to rebuild anyway.
-
-### `search`, `article`, `show`, `refs`, `context`, `docs`, `cypher`
-
-Read-only queries over the generated index. Every result contains a
-`file://.../document.html#anchor` link that opens the original HTML at the
-exact article or paragraph. For example:
-
-```bash
-uv run scrapper-legislatie-just-cli search "impozit pe venit" --doc codul-fiscal
-uv run scrapper-legislatie-just-cli article codul-fiscal 60
-uv run scrapper-legislatie-just-cli context "cota de impozitare pentru microintreprinderi"
-```
-
-### `run-all`
-
-Runs `download`, `clean`, `expand` and `process` in that order. It accepts the
-same `--slug`, `--limit`, `--force`, `--all-versions`, `--data-dir`,
-`--verbose` and `--ocr/--no-ocr` options. With `--dry-run`, only the download
-discovery runs.
-
-### `list-sources` / `paths`
-
-```bash
-uv run scrapper-legislatie-just-cli list-sources   # show slugs and document numbers
-uv run scrapper-legislatie-just-cli paths          # show data directories
-```
-
-## Environment variables
-
-| Variable | Description |
-| -------- | ----------- |
-| `SCRAPPER_DATA_DIR` | Default data root (overridden by `--data-dir`). When unset, `<current working directory>/legislatie-descarcata` is used. |
-| `SCRAPPER_LOG_LEVEL` | `DEBUG`, `INFO`, `WARNING`, ... Default: `INFO`. |
-| `SCRAPPER_LOG_FILE` | Optional log file path. Rotates at 100 MB. |
-
-## Bot protection / rate limits
-
-`legislatie.just.ro` uses bot protection and may return challenge pages or
-rate-limit requests. The downloader already:
-
-- rotates browser headers and user agents during discovery,
-- adds jitter between requests,
-- retries with exponential backoff,
-- uses `monolith` with a randomized user agent for the actual download,
-- stops immediately with a clear error if `monolith` is not installed.
-
-For experiments, always prefer a small sample:
+`legislatie.just.ro` has bot protection and rate limits. Wait a few minutes and
+try again. For a first test, always download a single act:
 
 ```bash
 uv run scrapper-legislatie-just-cli download --slug legea-contabilitatii --limit 1
 ```
 
-## Tests
+**Search returns nothing**
 
-The test suite does **not** touch the network. It covers the CLI, source
-resolution, steps 2-4 end to end (clean, expand, process) and the query layer,
-including synthetic needle fixtures for search, citations and the graph:
+Make sure the index was built:
+
+```bash
+uv run scrapper-legislatie-just-cli process
+```
+
+Then try fewer words, a synonym, or the act name with `--doc`.
+
+**The law text is old**
+
+Run `run-all` again. By default it downloads the latest consolidation. To keep
+older versions too, add `--all-versions` to `download`.
+
+## Advanced
+
+### Add your own laws
+
+The packaged source list is
+`src/scrapper_legislatie_just/sources.toml`. You can add a `sources.toml` in the
+directory where you run the CLI; it is picked up automatically.
+
+```toml
+[[sources]]
+numar_link = 1576
+nume = "Legea contabilitatii nr. 82/1991"
+slug = "legea-contabilitatii"
+descriere = "Stabileste principiile de baza ale contabilitatii."
+```
+
+`numar_link` is the number at the end of
+`https://legislatie.just.ro/Public/DetaliiDocument/<numar_link>`.
+
+You can also point to a specific file:
+
+```bash
+export SCRAPPER_SOURCES_FILE=/path/to/sources.toml
+```
+
+### Environment variables
+
+| Variable | Purpose |
+|---|---|
+| `SCRAPPER_DATA_DIR` | Default data folder |
+| `SCRAPPER_LOG_LEVEL` | `DEBUG`, `INFO`, `WARNING` |
+| `SCRAPPER_LOG_FILE` | Optional log file |
+
+### MCP server
+
+The stdio MCP server exposes the same search, article, and citation tools:
+
+```bash
+uv run python -m scrapper_legislatie_just.mcp_server
+```
+
+Configure this command in your MCP client if you want the `legislatie_*` tools.
+
+### Tests
+
+The test suite does not use the network:
 
 ```bash
 uv run pytest
 ```
-
-The real-corpus tests in `tests/test_real_corpus.py` run only when
-`legislatie-descarcata/4-processed/law.db` exists; otherwise they are skipped.
-
-Expected result: all tests pass.
