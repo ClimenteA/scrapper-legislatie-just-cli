@@ -8,6 +8,7 @@ STEP_DIRS = {
     "raw": "1-raw",
     "clean": "2-clean",
     "expanded": "3-expanded",
+    "processed": "4-processed",
 }
 
 DATA_SUBDIRS = tuple(STEP_DIRS.values())
@@ -24,7 +25,7 @@ def get_default_data_dir() -> Path:
 
 
 def step_dir(root: str | Path, step: str) -> Path:
-    """Return the folder for a pipeline step name (raw/clean/expanded)."""
+    """Return the folder for a pipeline step name (raw/clean/expanded/processed)."""
     if step not in STEP_DIRS:
         raise ValueError(f"Unknown step folder: {step}")
     return Path(root) / STEP_DIRS[step]

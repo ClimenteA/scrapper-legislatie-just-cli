@@ -12,7 +12,7 @@ app = typer.Typer(
     name="scrapper-legislatie-just-cli",
     add_completion=False,
     no_args_is_help=True,
-    help="Download, clean and expand Romanian legislation from legislatie.just.ro.",
+    help="Download, clean, expand and index Romanian legislation from legislatie.just.ro.",
 )
 
 
@@ -32,7 +32,7 @@ def main(
         help="Show the version and exit.",
     ),
 ) -> None:
-    """Scrapper fiscal command line interface."""
+    """Download, clean, expand and index Romanian legislation."""
 
 
 def _setup_logging(verbose: bool) -> None:
@@ -206,6 +206,227 @@ def expand(
     )
 
 
+@app.command()
+def process(
+    slug: Optional[list[str]] = typer.Option(
+        None, "--slug", "-s", help="Source slug (repeatable). Default: all sources."
+    ),
+    limit: Optional[int] = typer.Option(
+        None,
+        "--limit",
+        "-n",
+        min=1,
+        help="Maximum number of documents to index.",
+    ),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Rebuild even if the source files are unchanged."
+    ),
+    data_dir: Optional[Path] = typer.Option(
+        None,
+        "--data-dir",
+        help="Data root. Default: $SCRAPPER_DATA_DIR or <cwd>/legislatie-descarcata.",
+    ),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Debug logging."),
+) -> None:
+    """Step 4: build the SQLite/FTS5 legal index and the OpenCode instructions."""
+    _setup_logging(verbose)
+
+    from .processor import LegalIndexBuilder
+
+    builder = LegalIndexBuilder(
+        surse=_select_surse(slug),
+        data_dir=data_dir,
+        limit=limit,
+        force=force,
+    )
+    result = builder.build()
+    if result["skipped"]:
+        typer.secho(
+            "Process complete: index is already up to date (use --force to rebuild).",
+            fg=typer.colors.GREEN,
+        )
+    else:
+        typer.secho(
+            f"Process complete: {result['documents']} documents, "
+            f"{result['nodes']} nodes, {result['refs']} refs, "
+            f"{result['graph_edges']} graph edges in {result['seconds']}s.",
+            fg=typer.colors.GREEN,
+        )
+    typer.echo(f"index:    {builder.db_path}")
+    typer.echo(f"graph:    {builder.graph_path}")
+    typer.echo(f"catalog:  {builder.processed_dir / 'catalog.json'}")
+
+
+def _open_index(data_dir: Optional[Path]):
+    from .query import LegalIndex
+
+    try:
+        return LegalIndex(data_dir=data_dir)
+    except FileNotFoundError as ex:
+        typer.secho(str(ex), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1) from ex
+
+
+@app.command()
+def search(
+    query: str = typer.Argument(..., help="Cuvinte-cheie sau intrebare."),
+    doc: Optional[str] = typer.Option(
+        None, "--doc", help="Limiteaza cautarea la un singur act (slug)."
+    ),
+    kind: Optional[str] = typer.Option(
+        None, "--kind", help="Limiteaza la un tip de nod (articol, alineat, ...)."
+    ),
+    limit: int = typer.Option(8, "--limit", "-n", min=1, max=50),
+    all_versions: bool = typer.Option(
+        False, "--all-versions", help="Include consolidarile vechi."
+    ),
+    data_dir: Optional[Path] = typer.Option(None, "--data-dir"),
+) -> None:
+    """Search the legal index and print clickable file:// links."""
+    index = _open_index(data_dir)
+    try:
+        results = index.search(
+            query,
+            doc=doc,
+            kind=kind,
+            limit=limit,
+            latest_only=not all_versions,
+        )
+        typer.echo(index.format_search(results))
+    finally:
+        index.close()
+
+
+@app.command()
+def article(
+    doc: str = typer.Argument(..., help="Slug-ul actului (ex. codul-fiscal)."),
+    number: str = typer.Argument(..., help="Numarul articolului sau codul (ex. 60, 6210)."),
+    version: Optional[str] = typer.Option(
+        None, "--version", help="Data consolidarii (implicit: ultima)."
+    ),
+    data_dir: Optional[Path] = typer.Option(None, "--data-dir"),
+) -> None:
+    """Print one article with all its paragraphs and clickable links."""
+    index = _open_index(data_dir)
+    try:
+        data = index.article(doc, number, version=version)
+        typer.secho(f"# {data['doc_title']} — {data['label']}", bold=True)
+        typer.echo(f"SURSA: {data['link']}")
+        if data.get("date"):
+            typer.echo(f"Versiune: {data['date']}")
+        typer.echo()
+        typer.echo(data["text"])
+    except KeyError as ex:
+        typer.secho(str(ex), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1) from ex
+    finally:
+        index.close()
+
+
+@app.command()
+def show(
+    node_id: str = typer.Argument(..., help="Node id exact (ex. codul-fiscal@2026-10-25#s_art_87)."),
+    data_dir: Optional[Path] = typer.Option(None, "--data-dir"),
+) -> None:
+    """Show one node, its ancestors and its citations."""
+    index = _open_index(data_dir)
+    try:
+        data = index.show(node_id)
+        typer.secho(f"# {data['doc_title']} — {data['label']}", bold=True)
+        typer.echo(f"SURSA: {data['link']}")
+        typer.echo()
+        typer.echo(data["text"])
+        if data["ancestors"]:
+            typer.echo("\n**Parinti:**")
+            for item in data["ancestors"]:
+                typer.echo(f"- {item['label']} — {item['link']}")
+        outgoing = data["refs"]["outgoing"]
+        if outgoing:
+            typer.echo("\n**Trimiteri:**")
+            for ref in outgoing:
+                label = ref["label"] or ref["raw"] or ref["target"]
+                typer.echo(f"- [{label}] {ref['link'] or ref['raw']}")
+    except KeyError as ex:
+        typer.secho(str(ex), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1) from ex
+    finally:
+        index.close()
+
+
+@app.command("refs")
+def refs(
+    node_id: str = typer.Argument(..., help="Node id exact."),
+    subtree: bool = typer.Option(
+        False, "--subtree", help="Include tot articolul, nu doar nodul."
+    ),
+    data_dir: Optional[Path] = typer.Option(None, "--data-dir"),
+) -> None:
+    """Show incoming and outgoing citations for a node."""
+    index = _open_index(data_dir)
+    try:
+        data = index.neighbors(node_id, subtree=subtree)
+        for direction, label in (("outgoing", "Trimiteri din nod"), ("incoming", "Citat de")):
+            typer.secho(f"== {label} ==", bold=True)
+            if not data[direction]:
+                typer.echo("(niciuna)")
+                continue
+            for ref in data[direction]:
+                target = ref["label"] or ref["raw"] or ref["target"]
+                typer.echo(f"- [{ref['rel']}] {target} — {ref['link'] or ref['raw']}")
+    finally:
+        index.close()
+
+
+@app.command()
+def context(
+    question: str = typer.Argument(..., help="Intrebarea completa."),
+    limit: int = typer.Option(4, "--limit", "-n", min=1, max=12),
+    data_dir: Optional[Path] = typer.Option(None, "--data-dir"),
+) -> None:
+    """Build an evidence pack (articles + citations) for a question."""
+    index = _open_index(data_dir)
+    try:
+        typer.echo(index.context(question, limit=limit))
+    finally:
+        index.close()
+
+
+@app.command()
+def docs(
+    data_dir: Optional[Path] = typer.Option(None, "--data-dir"),
+) -> None:
+    """List the indexed acts and their consolidation dates."""
+    index = _open_index(data_dir)
+    try:
+        for item in index.docs():
+            mark = "latest" if item["is_latest"] else "older "
+            typer.echo(
+                f"{item['slug']:<45} {item['version']:<12} {mark} {item['title'][:70]}"
+            )
+    finally:
+        index.close()
+
+
+@app.command()
+def cypher(
+    query: str = typer.Argument(..., help="Interogare Cypher (GraphQLite)."),
+    data_dir: Optional[Path] = typer.Option(None, "--data-dir"),
+) -> None:
+    """Run a Cypher query against the citation graph in 4-processed/graph.db."""
+    from .config import step_dir
+
+    from .graph import run_cypher
+
+    root = resolve_data_dir(data_dir)
+    try:
+        rows = run_cypher(step_dir(root, "processed") / "graph.db", query)
+    except (FileNotFoundError, RuntimeError) as ex:
+        typer.secho(str(ex), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1) from ex
+    for row in rows:
+        typer.echo(row)
+
+
 @app.command("run-all")
 def run_all(
     slug: Optional[list[str]] = typer.Option(
@@ -243,16 +464,17 @@ def run_all(
     ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Debug logging."),
 ) -> None:
-    """Run steps 1-3 in order (download, clean, expand)."""
+    """Run steps 1-4 in order (download, clean, expand, process)."""
     _setup_logging(verbose)
 
     from .cleaner import LegislatieJustCleaner
     from .downloader import LegislatieJustDownloader
     from .expander import LegislatieJustExpander
+    from .processor import LegalIndexBuilder
 
     selected = _select_surse(slug)
 
-    typer.secho("== Step 1/3: download ==", bold=True)
+    typer.secho("== Step 1/4: download ==", bold=True)
     downloader = LegislatieJustDownloader(
         surse=selected,
         data_dir=data_dir,
@@ -268,10 +490,13 @@ def run_all(
     )
 
     if dry_run:
-        typer.secho("Dry run: skipping clean and expand.", fg=typer.colors.YELLOW)
+        typer.secho(
+            "Dry run: skipping clean, expand and process.",
+            fg=typer.colors.YELLOW,
+        )
         return
 
-    typer.secho("== Step 2/3: clean ==", bold=True)
+    typer.secho("== Step 2/4: clean ==", bold=True)
     cleaner = LegislatieJustCleaner(
         surse=selected,
         data_dir=data_dir,
@@ -282,7 +507,7 @@ def run_all(
     result = cleaner.cleanify()
     typer.echo(f"Clean complete: {result['cleaned']} cleaned.")
 
-    typer.secho("== Step 3/3: expand ==", bold=True)
+    typer.secho("== Step 3/4: expand ==", bold=True)
     expander = LegislatieJustExpander(
         surse=selected,
         data_dir=data_dir,
@@ -293,6 +518,20 @@ def run_all(
     typer.echo(
         f"Expand complete: {result['converted']} Markdown files, "
         f"{result['tocs']} TOC files."
+    )
+
+    typer.secho("== Step 4/4: process ==", bold=True)
+    builder = LegalIndexBuilder(
+        surse=selected,
+        data_dir=data_dir,
+        limit=limit,
+        force=force,
+    )
+    result = builder.build()
+    typer.echo(
+        f"Process complete: {result['documents']} documents, "
+        f"{result['nodes']} nodes, {result['refs']} refs, "
+        f"{result['graph_edges']} graph edges."
     )
 
     typer.secho("All steps finished.", fg=typer.colors.GREEN, bold=True)

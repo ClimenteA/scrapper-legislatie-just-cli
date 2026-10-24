@@ -1,0 +1,14 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "instructions": ["legislatie-descarcata/4-processed/AGENTS.md"],
+  "mcp": {
+    "servers": {
+      "legislatie": {
+        "type": "local",
+        "command": [".venv/bin/python", "-m", "scrapper_legislatie_just.mcp_server"],
+        "cwd": ".",
+        "timeout": 30000
+      }
+    }
+  }
+}

@@ -7,6 +7,7 @@ A small standalone Python CLI that downloads and processes legislatie.just.ro pa
 | 1    | `download` | Downloads the latest printable HTML consolidation per source           |
 | 2    | `clean`    | Normalizes the raw HTML and writes semantic, readable HTML           |
 | 3    | `expand`   | Groups files by source, builds a TOC JSON and converts HTML to `.md` |
+| 4    | `process`  | Builds the SQLite/FTS5 legal index and the OpenCode instructions     |
 
 
 ## Requirements
@@ -98,7 +99,8 @@ where you run the CLI. Each folder is prefixed with the step that writes it:
 <current working directory>/legislatie-descarcata/
 ├── 1-raw/       # step 1: downloaded printable HTML
 ├── 2-clean/     # step 2: cleaned semantic HTML
-└── 3-expanded/  # step 3: <slug>/ folders with HTML, MD and toc-<slug>.json
+├── 3-expanded/  # step 3: <slug>/ folders with HTML, MD and toc-<slug>.json
+└── 4-processed/ # step 4: law.db (SQLite/FTS5), graph.db and catalog.json
 ```
 
 Use `--data-dir /some/path` on any command to use another root, or set:
@@ -139,7 +141,7 @@ Expand to Markdown and build the TOC:
 uv run scrapper-legislatie-just-cli expand --slug legea-contabilitatii
 ```
 
-Or run steps 1-3 in one go:
+Or run all four steps in one go:
 
 ```bash
 uv run scrapper-legislatie-just-cli run-all \
@@ -219,12 +221,43 @@ legislatie-descarcata/3-expanded/<slug>/
 └── toc-<slug>.json
 ```
 
+### `process` (step 4)
+
+```bash
+uv run scrapper-legislatie-just-cli process [OPTIONS]
+```
+
+| Option | Description |
+| ------ | ----------- |
+| `-s, --slug TEXT` | Source slug (repeatable). |
+| `-n, --limit INT` | Maximum number of documents to index. |
+| `-f, --force` | Rebuild even when the source files are unchanged. |
+| `--data-dir PATH` | Data root. |
+| `-v, --verbose` | Debug logging. |
+
+Builds `4-processed/law.db` (SQLite + FTS5/BM25 nodes), the citation graph in
+`4-processed/graph.db`, `4-processed/catalog.json` and the OpenCode
+instructions file `4-processed/AGENTS.md`. The build is skipped automatically
+when nothing changed; use `--force` to rebuild anyway.
+
+### `search`, `article`, `show`, `refs`, `context`, `docs`, `cypher`
+
+Read-only queries over the generated index. Every result contains a
+`file://.../document.html#anchor` link that opens the original HTML at the
+exact article or paragraph. For example:
+
+```bash
+uv run scrapper-legislatie-just-cli search "impozit pe venit" --doc codul-fiscal
+uv run scrapper-legislatie-just-cli article codul-fiscal 60
+uv run scrapper-legislatie-just-cli context "cota de impozitare pentru microintreprinderi"
+```
+
 ### `run-all`
 
-Runs `download`, `clean` and `expand` in that order. It accepts the same
-`--slug`, `--limit`, `--force`, `--all-versions`, `--data-dir`, `--verbose`
-and `--ocr/--no-ocr` options. With `--dry-run`, only the download discovery
-runs.
+Runs `download`, `clean`, `expand` and `process` in that order. It accepts the
+same `--slug`, `--limit`, `--force`, `--all-versions`, `--data-dir`,
+`--verbose` and `--ocr/--no-ocr` options. With `--dry-run`, only the download
+discovery runs.
 
 ### `list-sources` / `paths`
 
@@ -260,24 +293,15 @@ uv run scrapper-legislatie-just-cli download --slug legea-contabilitatii --limit
 
 ## Tests
 
-The test suite uses two tiny local HTML fixtures and does **not** touch the
-network. It exercises steps 2-3 end to end, including Docling HTML → Markdown
-conversion:
+The test suite does **not** touch the network. It covers the CLI, source
+resolution, steps 2-4 end to end (clean, expand, process) and the query layer,
+including synthetic needle fixtures for search, citations and the graph:
 
 ```bash
 uv run pytest
 ```
 
+The real-corpus tests in `tests/test_real_corpus.py` run only when
+`legislatie-descarcata/4-processed/law.db` exists; otherwise they are skipped.
+
 Expected result: all tests pass.
-
-## Differences from the Django project
-
-- Django settings were replaced by `scrapper_legislatie_just/config.py`.
-- `webapp.logger` was replaced by a local Loguru configuration.
-- `utils.browser_headers`, `jitter_call` and the base64 OCR helper were
-  copied into this package.
-- The hard-coded source list was moved from `surse.py` to `sources.toml` and
-  is parsed with `tomllib`.
-- `monolith` is mandatory; there is no plain-`requests` download fallback.
-- The cleaner and expander accept `--slug`, `--limit` and `--force` so they
-  can process small samples.

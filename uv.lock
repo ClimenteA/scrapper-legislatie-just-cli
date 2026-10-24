@@ -620,6 +620,18 @@ wheels = [
 ]
 
 [[package]]
+name = "graphqlite"
+version = "0.12.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/81/91/7fa8760640eed678db3cf06f297840826d8350e920f4a9d1d1f1de25e717/graphqlite-0.12.0.tar.gz", hash = "sha256:17c1e6c20d12b5b412c60616c5ee177b25bb9f938861870d0bfce4986aa691c8", size = 493435, upload-time = "2026-10-17T22:02:36.668Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e3/23/425c198e4a1931ea51a7b8acc037fef6729972eee65a3ed261784715dfc8/graphqlite-0.12.0-py3-none-macosx_11_0_arm64.whl", hash = "sha256:2fe2afbdc5f5fe8084bdc353fe03c565bc66b81c466e5665679d4f04fc0ce979", size = 393447, upload-time = "2026-10-17T22:02:31.517Z" },
+    { url = "https://files.pythonhosted.org/packages/8e/1b/4e218317a338cf2d7578b36757818ff2f4e78e022e6014b2d81da5d106a8/graphqlite-0.12.0-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:7bc7b2efffcdfc7d285fb846ea18697c5a69582d4632980773abad90c32df58d", size = 489247, upload-time = "2026-10-17T22:02:32.88Z" },
+    { url = "https://files.pythonhosted.org/packages/ea/f1/3967a8a89424f9d36de6984bafdd17237341cf910b70c34fec3e9d5a11bd/graphqlite-0.12.0-py3-none-manylinux_2_28_aarch64.whl", hash = "sha256:99ba82ec87dc33245ad98b2bd377f3c784a90b5833f1ac91f313481ac0f56704", size = 484373, upload-time = "2026-10-17T22:02:34.243Z" },
+    { url = "https://files.pythonhosted.org/packages/52/bc/d8c7d08965e6e7e6a75391eb7d48f0f7abc7aad3bbe3678deb6034c1d367/graphqlite-0.12.0-py3-none-win_amd64.whl", hash = "sha256:960ae0df8c2b4923c395c3e9ea4cea33bda9999401597ff2b8702f516040a707", size = 1358255, upload-time = "2026-10-17T22:02:35.641Z" },
+]
+
+[[package]]
 name = "h11"
 version = "0.16.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2970,8 +2982,10 @@ dependencies = [
     { name = "beautifulsoup4" },
     { name = "docling" },
     { name = "easyocr" },
+    { name = "graphqlite" },
     { name = "html5lib" },
     { name = "loguru" },
+    { name = "lxml" },
     { name = "markdown" },
     { name = "pydantic" },
     { name = "requests" },
@@ -2990,8 +3004,10 @@ requires-dist = [
     { name = "beautifulsoup4", specifier = ">=4.12.3" },
     { name = "docling", specifier = ">=2.90.0" },
     { name = "easyocr", specifier = ">=1.7.2" },
+    { name = "graphqlite", specifier = ">=0.12.0" },
     { name = "html5lib", specifier = ">=1.1" },
     { name = "loguru", specifier = ">=0.7.2" },
+    { name = "lxml", specifier = ">=5.2.0" },
     { name = "markdown", specifier = ">=3.7" },
     { name = "pydantic", specifier = ">=2.8.2" },
     { name = "requests", specifier = ">=2.32.3" },
