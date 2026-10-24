@@ -110,6 +110,10 @@ TOOLS: list[dict[str, Any]] = [
             "properties": {
                 "question": {"type": "string"},
                 "limit": {"type": "integer", "minimum": 1, "maximum": 12},
+                "doc": {
+                    "type": "string",
+                    "description": "Limiteaza la un act (slug), ex. codul-fiscal.",
+                },
             },
             "required": ["question"],
         },
@@ -214,6 +218,7 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> str:
         return index.context(
             arguments["question"],
             limit=int(arguments.get("limit", 4)),
+            doc=arguments.get("doc"),
         )
 
     if name == "docs":

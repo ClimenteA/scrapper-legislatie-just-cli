@@ -381,12 +381,15 @@ def refs(
 def context(
     question: str = typer.Argument(..., help="Intrebarea completa."),
     limit: int = typer.Option(4, "--limit", "-n", min=1, max=12),
+    doc: Optional[str] = typer.Option(
+        None, "--doc", help="Limiteaza la un act (slug), ex. codul-fiscal."
+    ),
     data_dir: Optional[Path] = typer.Option(None, "--data-dir"),
 ) -> None:
     """Build an evidence pack (articles + citations) for a question."""
     index = _open_index(data_dir)
     try:
-        typer.echo(index.context(question, limit=limit))
+        typer.echo(index.context(question, limit=limit, doc=doc))
     finally:
         index.close()
 

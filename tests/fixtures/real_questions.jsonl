@@ -4,6 +4,27 @@
 {"question": "concediu crestere copil", "doc": "oug-concediu-crestere-copil", "articles": ["2", "7", "13", "16"]}
 {"question": "contributii sociale persoane fizice", "doc": "codul-fiscal", "articles": ["137", "146", "147", "148"]}
 {"question": "PFA numar clase CAEN", "doc": "pfa-ii-if-desfasurare-activitati-economice", "articles": ["16"]}
-{"question": "CAEN 6210", "doc": "caen-rev-3", "anchors": ["v-1708"]}
+{"question": "CAEN 6210", "doc": "caen-rev-3", "anchors": ["v-1708"], "expected_terms": ["6210", "softului"]}
 {"question": "raportare SAF-T", "doc": "ordin-anaf-raportarea-saf-t-d406", "articles": ["1"]}
 {"question": "e-factura obligatie", "doc": "oug-factura-electronica-e-factura", "articles": ["9^1", "10", "10^1", "10^5", "10^6"]}
+{"question": "La ce interval se efectueaza inventarierea generala a elementelor de natura activelor, datoriilor si capitalurilor proprii?", "doc": "legea-contabilitatii", "articles": ["7"], "notes": "Inventarierea se face cel putin o data in cursul exercitiului financiar."}
+{"question": "Cat timp se pastreaza registrele de contabilitate obligatorii si documentele justificative?", "doc": "legea-contabilitatii", "articles": ["25"], "notes": "Termenul este de 5 ani de la 1 iulie al anului urmator inchiderii exercitiului."}
+{"question": "Care este durata exercitiului financiar?", "doc": "legea-contabilitatii", "articles": ["27"], "notes": "Exercitiul financiar este de regula anul calendaristic si dureaza 12 luni."}
+{"question": "Care este varsta standard de pensionare si stagiul minim de cotizare contributiv?", "doc": "lege-pensii", "articles": ["47"], "notes": "Varsta standard este 65 de ani, stagiul minim 15 ani."}
+{"question": "Cu cat se reduce varsta standard de pensionare pentru femeile care au nascut si crescut copii?", "doc": "lege-pensii", "articles": ["51"], "notes": "Reducerea depinde de numarul copiilor, conform tabelului din articol."}
+{"question": "Persoanele cu deficienta vizuala grava beneficiaza de pensie pentru limita de varsta indiferent de varsta?", "doc": "lege-pensii", "articles": ["53"], "notes": "Conditia este un stagiu contributiv de cel putin o treime din stagiul complet."}
+{"question": "Ce conditii cumulative trebuie sa indeplineasca un somer pentru a beneficia de indemnizatie de somaj?", "doc": "lege-somaj", "articles": ["34"], "notes": "Include stagiu de minimum 12 luni in ultimele 24 de luni."}
+{"question": "Care este durata indemnizatiei de somaj in functie de stagiul de cotizare?", "doc": "lege-somaj", "articles": ["39"], "notes": "6, 9 sau 12 luni, in functie de stagiu."}
+{"question": "Cum se determina baza de calcul al indemnizatiei pentru incapacitate temporara de munca?", "doc": "oug-concedii-medicale", "articles": ["10"], "notes": "Media veniturilor brute lunare din ultimele 6 luni din cele 12."}
+{"question": "Care este durata maxima de acordare a indemnizatiei pentru incapacitate temporara de munca?", "doc": "oug-concedii-medicale", "articles": ["13"], "notes": "Cel mult 183 de zile in interval de un an."}
+{"question": "Ce este telemunca?", "doc": "lege-telemunca", "articles": ["2"], "notes": "Definitia este in art. 2 lit. a)."}
+{"question": "Este necesar acordul salariatului pentru desfasurarea activitatii in regim de telemunca?", "doc": "lege-telemunca", "articles": ["3"], "notes": "Telemunca se bazeaza pe acordul de vointa al partilor."}
+{"question": "Care este plafonul zilnic pentru platile in numerar catre o persoana?", "doc": "lege-disciplina-financiara-plati-numerar", "articles": ["3"], "notes": "Plafonul este de 5.000 lei/persoana, cu plafon total de 10.000 lei/zi."}
+{"question": "Care este plafonul sumelor in numerar aflate in casierie la sfarsitul zilei?", "doc": "lege-disciplina-financiara-plati-numerar", "articles": ["4^2"], "notes": "50.000 lei, respectiv 500.000 lei pentru magazinele mari."}
+{"question": "Care este termenul maxim de remediere stabilit prin planul de remediere?", "doc": "lege-prevenire-contraventii", "articles": ["2"], "notes": "Termenul de remediere este de maximum 90 de zile calendaristice."}
+{"question": "In cat timp se reia controlul dupa expirarea termenului de remediere?", "doc": "lege-prevenire-contraventii", "articles": ["8"], "notes": "In maximum 10 zile lucratoare."}
+{"question": "Cand trebuie transmise datele in REGES-ONLINE inainte de inceperea activitatii?", "doc": "reges-online-registrul-general-de-evidenta-a-salariatilor", "articles": ["3"], "notes": "Cel tarziu in ziua anterioara inceperii activitatii."}
+{"question": "In cat timp trebuie eliberate copiile documentelor din dosarul personal la cererea salariatului?", "doc": "reges-online-registrul-general-de-evidenta-a-salariatilor", "articles": ["8"], "notes": "In termen de 15 zile lucratoare."}
+{"question": "Cum se distribuie dividendele asociatilor?", "doc": "legea-societatilor", "articles": ["67"], "notes": "Proportional cu cota de participare la capitalul social varsat."}
+{"question": "Cand este prezumata insolventa ca fiind vadita?", "doc": "lege-procedura-insolventei", "articles": ["3"], "notes": "Dupa 90 de zile de la scadenta, daca datoria nu a fost platita."}
+{"question": "Cand o societate-mama are obligatia sa intocmeasca situatii financiare anuale consolidate?", "doc": "reglementari-contabile", "articles": ["7"], "notes": "Cand sunt depasite criteriile din reglementari sau exista o entitate de interes public."}

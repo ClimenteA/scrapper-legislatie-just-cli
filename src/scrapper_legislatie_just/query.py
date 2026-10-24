@@ -166,6 +166,11 @@ class LegalIndex:
                    d.is_latest, d.source_url,
                    a.label AS article_label, a.number AS article_number,
                    a.anchor AS article_anchor,
+                   (SELECT t.text FROM nodes t
+                     WHERE t.article_id = n.article_id
+                       AND t.kind IN ('paragraf', 'alineat', 'litera', 'punct')
+                     ORDER BY t.order_idx
+                     LIMIT 1) AS article_lead,
                    bm25(nodes_fts, 0.0, 4.0, 2.0, 1.0) AS score,
                    snippet(nodes_fts, 3, '>>>', '<<<', '…', 36) AS snip
             FROM nodes_fts
@@ -232,6 +237,16 @@ class LegalIndex:
         for row in collected.values():
             label_text = normalize(row["label"] or "")
             article_text = normalize(row["article_label"] or "")
+            # The first short paragraph after the article heading is usually
+            # its title ("Scutiri", "Definitia microintreprinderii", ...).
+            # Include it in the label context so a title term outranks an
+            # incidental mention in a later paragraph.
+            if row["article_lead"]:
+                article_text = (
+                    article_text
+                    + " "
+                    + normalize(str(row["article_lead"])[:300])
+                )
             doc_text = normalize(row["title"] or "")
             body_text = normalize(row["text"] or "")
             haystack = " ".join((label_text, article_text, doc_text, body_text))
@@ -263,6 +278,15 @@ class LegalIndex:
                 score *= 1.4
             idf_sum = sum(idf for _t, stem, _term, idf in terms if stem in matched_stems)
             score += idf_sum * 0.5 * _proximity(haystack, list(matched_stems))
+            # Definition-shaped nodes ("telemunca - forma de organizare...")
+            # should win against paragraphs that merely mention the term.
+            for token, stem, _term, idf in terms:
+                if body_text.startswith(token + " ") or body_text.startswith(
+                    token + " -"
+                ):
+                    score += idf * 0.8
+                elif body_text.startswith(stem):
+                    score += idf * 0.35
             score += min(2.0, max(0.0, -row["score"]) / 8.0)
             scored.append((exact_tokens, matched_stems, score, row))
 
@@ -328,6 +352,14 @@ class LegalIndex:
             if row["article_anchor"]:
                 uri = (self.root / row["html_rel"]).resolve().as_uri()
                 article_link = f"{uri}#{row['article_anchor']}"
+            link = self.link(row)
+            if "#" not in link:
+                # A document-level note has no HTML anchor. Fall back to the
+                # article anchor when possible; otherwise skip it so every
+                # returned evidence link is clickable.
+                if not article_link:
+                    continue
+                link = article_link
             results.append(
                 {
                     "id": row["id"],
@@ -341,7 +373,7 @@ class LegalIndex:
                     "doc_title": row["title"],
                     "version": row["doc_version"],
                     "date": row["consolidation_date"],
-                    "link": self.link(row),
+                    "link": link,
                     "source_url": row["source_url"],
                     "score": round(score, 3),
                     "matched": exact_coverage,
@@ -670,8 +702,10 @@ class LegalIndex:
         ]
 
     # ----------------------------------------------------------------- context
-    def context(self, question: str, limit: int = 4) -> str:
-        hits = self.search(question, limit=max(limit * 3, 8))
+    def context(
+        self, question: str, limit: int = 4, doc: str | None = None
+    ) -> str:
+        hits = self.search(question, doc=doc, limit=max(limit * 3, 8))
         if not hits:
             return (
                 "Nu am găsit pasaje în corpus pentru această întrebare.\n"
