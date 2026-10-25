@@ -147,6 +147,10 @@ $toolBinDir = (& uv tool dir --bin 2>$null)
 if (-not $toolBinDir) { $toolBinDir = Join-Path $env:USERPROFILE '.local\bin' }
 $cli = Join-Path $toolBinDir "$Pkg.exe"
 if (-not (Test-Path $cli)) {
+    $plain = Join-Path $toolBinDir $Pkg
+    if (Test-Path $plain) { $cli = $plain }
+}
+if (-not (Test-Path $cli)) {
     $cmd = Get-Command $Pkg -ErrorAction SilentlyContinue
     if ($cmd) { $cli = $cmd.Source }
 }
