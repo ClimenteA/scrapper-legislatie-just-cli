@@ -8,25 +8,76 @@ is built on your computer.
 
 ### 1. Install
 
-You need:
+One command. It installs [uv](https://docs.astral.sh/uv/), the CLI, and the
+`monolith` binary used to save the pages.
 
-- Python 3.11+
-- [uv](https://docs.astral.sh/uv/)
-- [`monolith`](https://github.com/Y2Z/monolith/releases) available on `PATH`
-
-Install the program:
+Linux and macOS (also Git Bash, MSYS2 and WSL on Windows):
 
 ```bash
-cd scrapper-legislatie-just-cli
-uv sync
+curl -LsSf https://raw.githubusercontent.com/ClimenteA/scrapper-legislatie-just-cli/main/install.sh | sh
+```
+
+Windows PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/ClimenteA/scrapper-legislatie-just-cli/main/install.ps1 | iex
 ```
 
 Check that it works:
 
 ```bash
+scrapper-legislatie-just-cli --help
 monolith --version
-uv run scrapper-legislatie-just-cli --help
 ```
+
+The installer is safe to run again: it upgrades an existing installation.
+Useful options:
+
+| Option | Meaning |
+|---|---|
+| `--ref v0.1.0` | Install a tag, branch, or commit instead of `main` |
+| `--upgrade` | Force a reinstall of the current version |
+| `--python 3.12` | Python version for the tool environment |
+| `--repo <url>` | Install from a fork, an SSH URL, or a local checkout |
+| `--no-monolith` | Do not download the `monolith` binary |
+
+When piping, pass options after `sh -s --`:
+
+```bash
+curl -LsSf .../install.sh | sh -s -- --ref v0.1.0
+```
+
+The same values work as environment variables: `SCRAPPER_REF`,
+`SCRAPPER_REPO_URL`, `SCRAPPER_PYTHON`, `SCRAPPER_NO_MONOLITH=1`.
+
+What gets installed:
+
+| What | Where |
+|---|---|
+| `scrapper-legislatie-just-cli` and `scrapper-legislatie-just-mcp` | `~/.local/bin` (`%USERPROFILE%\.local\bin` on Windows) |
+| Python and dependencies | uv's tool environment, managed by `uv tool` |
+| Data | `./legislatie-descarcata`, in the directory where you run the commands |
+
+Upgrade by running the installer again, or `uv tool upgrade
+scrapper-legislatie-just-cli`. Remove everything with `uv tool uninstall
+scrapper-legislatie-just-cli` (your `legislatie-descarcata` folder stays).
+
+The OCR stack (`docling`, `easyocr`) and the Cypher graph (`graphqlite`) are
+installed by default, because `download`, `expand` and `cypher` need them. The
+first install downloads a few hundred MB and takes several minutes; later runs
+are cached.
+
+#### From source (development)
+
+```bash
+git clone https://github.com/ClimenteA/scrapper-legislatie-just-cli.git
+cd scrapper-legislatie-just-cli
+uv sync
+```
+
+Every command in this README is written with the `uv run` prefix from the
+checkout. If you installed with the one-liner, just drop `uv run` and call
+`scrapper-legislatie-just-cli` directly.
 
 ### 2. Try one law first
 
@@ -110,9 +161,19 @@ every tool call returns an error.
 
 ### 2. Note the absolute paths
 
+If you installed with the one-liner, the server is the
+`scrapper-legislatie-just-mcp` command. Editors do not see your shell `PATH`, so
+use the absolute path:
+
 ```bash
-pwd
-echo "$PWD/.venv/bin/python"
+command -v scrapper-legislatie-just-mcp   # e.g. /home/you/.local/bin/scrapper-legislatie-just-mcp
+echo "$PWD/legislatie-descarcata"
+```
+
+From a source checkout the same server runs from the virtualenv:
+
+```bash
+echo "$PWD/.venv/bin/python"   # then: -m scrapper_legislatie_just.mcp_server
 echo "$PWD/legislatie-descarcata"
 ```
 
@@ -120,18 +181,28 @@ Every snippet below uses these placeholders:
 
 | Placeholder | Meaning |
 |---|---|
-| `/abs/path/scrapper-legislatie-just-cli` | repository root |
-| `/abs/path/scrapper-legislatie-just-cli/.venv/bin/python` | interpreter with the package installed |
+| `/abs/path/scrapper-legislatie-just-cli` | repository root (source checkout) |
+| `/abs/path/scrapper-legislatie-just-cli/.venv/bin/python` | interpreter with the package installed (source checkout) |
+| `scrapper-legislatie-just-mcp` | installed server command (one-line install) |
 | `/abs/path/scrapper-legislatie-just-cli/legislatie-descarcata` | data folder |
 
-On Windows the interpreter is
-`C:\abs\path\scrapper-legislatie-just-cli\.venv\Scripts\python.exe`; escape the
-backslashes inside JSON and TOML strings (`C:\\abs\\path\\...`).
+The snippets use the source-checkout form. With the one-liner, replace the pair
 
-Use the absolute interpreter path, not `python` or `uv`. Editors launch MCP
-servers without your interactive shell `PATH`, so short names often fail with
-"command not found". `uv sync` installs the package inside `.venv`, so
-`-m scrapper_legislatie_just.mcp_server` works from any working directory.
+```json
+"command": "/abs/path/....venv/bin/python",
+"args": ["-m", "scrapper_legislatie_just.mcp_server"]
+```
+
+with a single command and no `args`:
+
+```json
+"command": "/home/you/.local/bin/scrapper-legislatie-just-mcp"
+```
+
+On Windows that is
+`%USERPROFILE%\.local\bin\scrapper-legislatie-just-mcp.exe`, and the checkout
+interpreter is `...\.venv\Scripts\python.exe`; escape the backslashes inside
+JSON and TOML strings (`C:\\...`).
 
 ### 3. Tell the server where the data is
 
@@ -349,9 +420,11 @@ printf '%s\n' \
 ```
 
 You should get two JSON-RPC responses, the second listing `search`, `article`,
-`show`, `neighbors`, `context`, `docs`, and `cypher`. On Windows replace the
-last line with
-`.venv\Scripts\python.exe -m scrapper_legislatie_just.mcp_server`.
+`show`, `neighbors`, `context`, `docs`, and `cypher`. With the one-line
+install, use the installed command on the last line instead:
+`| scrapper-legislatie-just-mcp`. On Windows replace it with
+`.venv\Scripts\python.exe -m scrapper_legislatie_just.mcp_server`, or
+`scrapper-legislatie-just-mcp.exe`.
 
 Then check the client view:
 
@@ -427,8 +500,16 @@ Every command accepts the same `--data-dir`.
 
 **`monolith` is missing**
 
-The download step will not run. Install `monolith` from its releases page and
-make sure `monolith --version` works in the same terminal.
+The download step will not run until `monolith --version` works in the same
+terminal. The installer tries to fetch the prebuilt binary automatically; if
+that did not work, install it by hand:
+
+| Platform | Command |
+|---|---|
+| macOS | `brew install monolith` |
+| Ubuntu / Debian | `curl -fLsS https://github.com/Y2Z/monolith/releases/latest/download/monolith-cli-linux-x86_64 -o ~/.local/bin/monolith && chmod +x ~/.local/bin/monolith` |
+| Windows | `winget install --id=Y2Z.Monolith -e` |
+| Any | prebuilt binaries on the [releases page](https://github.com/Y2Z/monolith/releases) |
 
 **Downloads fail or stop**
 
@@ -601,7 +682,8 @@ writing Cypher.
 ### MCP server
 
 The stdio server is a single module with no third-party MCP dependency, so it
-runs in the same virtualenv as the CLI:
+runs in the same virtualenv as the CLI. The installed command is
+`scrapper-legislatie-just-mcp`; from a source checkout the equivalent is:
 
 ```bash
 uv run python -m scrapper_legislatie_just.mcp_server

@@ -22,6 +22,7 @@ dependencies = [
 
 [project.scripts]
 scrapper-legislatie-just-cli = "scrapper_legislatie_just.cli:app"
+scrapper-legislatie-just-mcp = "scrapper_legislatie_just.mcp_server:main"
 
 [dependency-groups]
 dev = [
