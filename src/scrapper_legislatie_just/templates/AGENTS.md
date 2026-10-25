@@ -51,8 +51,11 @@ Toate tool-urile sunt Read-only si intorc linkuri `file://`.
 - `legislatie_context(question, limit=4)` — pachet gata de citit: articole
   intregi, linkuri `SURSA:` si trimiteri.
 - `legislatie_docs()` — lista actelor indexate, cu data consolidarii.
-- `legislatie_cypher(query)` — optional, doar daca `graphqlite` este instalat;
-  interogare Cypher peste graful de citari (`4-processed/graph.db`).
+- `legislatie_cypher(query)` — interogare Cypher peste graful de citari
+  (`4-processed/graph.db`): noduri `Articol`, `Alineat`, `Litera`, `Nota` etc.
+  si muchii `CITEAZA` / `MENTIONEAZA`, plus variantele agregate `*_ARTICOL` cu
+  proprietatea `count`. Nu cauta in textul legii; pentru text foloseste
+  `search` sau `context`.
 
 ## Formatul raspunsului
 

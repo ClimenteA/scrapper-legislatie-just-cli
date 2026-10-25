@@ -126,8 +126,11 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "cypher",
         "description": (
-            "Interogare Cypher peste graful de citari (graph.db). Necesita "
-            "pachetul optional graphqlite si comanda 'graph'."
+            "Interogare Cypher peste graful de citari (4-processed/graph.db): "
+            "noduri Articol/Alineat/Litera/Nota etc. si muchii CITEAZA / "
+            "MENTIONEAZA, plus variantele agregate *_ARTICOL cu proprietatea "
+            "count. Nu cauta in textul legii; pentru text foloseste search "
+            "sau context."
         ),
         "inputSchema": {
             "type": "object",
