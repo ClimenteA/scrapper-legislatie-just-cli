@@ -59,8 +59,8 @@ What gets installed:
 | Data | `./legislatie-descarcata`, in the directory where you run the commands |
 
 Upgrade by running the installer again, or `uv tool upgrade
-scrapper-legislatie-just-cli`. Remove everything with `uv tool uninstall
-scrapper-legislatie-just-cli` (your `legislatie-descarcata` folder stays).
+scrapper-legislatie-just-cli`. To remove everything, see
+[Uninstall](#uninstall).
 
 The OCR stack (`docling`, `easyocr`) and the Cypher graph (`graphqlite`) are
 installed by default, because `download`, `expand` and `cypher` need them. The
@@ -495,6 +495,45 @@ uv run scrapper-legislatie-just-cli run-all --data-dir /path/to/library
 ```
 
 Every command accepts the same `--data-dir`.
+
+## Uninstall
+
+One command, mirroring the installer:
+
+Linux and macOS (also Git Bash, MSYS2 and WSL on Windows):
+
+```bash
+curl -LsSf https://raw.githubusercontent.com/ClimenteA/scrapper-legislatie-just-cli/main/uninstall.sh | sh
+```
+
+Windows PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/ClimenteA/scrapper-legislatie-just-cli/main/uninstall.ps1 | iex
+```
+
+It removes the `uv tool` environment (the CLI and the MCP server) and the
+`monolith` binary that the installer placed in `~/.local/bin`. Options:
+
+| Option | Meaning |
+|---|---|
+| `--keep-monolith` | Leave the `monolith` binary in place |
+| `--purge-data` | Also delete `./legislatie-descarcata` (or `$SCRAPPER_DATA_DIR`) |
+| `--dry-run` | Print what would be removed, change nothing |
+
+When piping, pass options after `sh -s --`:
+
+```bash
+curl -LsSf .../uninstall.sh | sh -s -- --dry-run
+```
+
+The same values work as environment variables: `SCRAPPER_KEEP_MONOLITH=1` and
+`SCRAPPER_DATA_DIR`.
+
+`uv` itself is kept, because other tools on the machine may use it; remove it
+with `uv self uninstall`. `monolith` installed with Homebrew, snap, or winget
+is also kept. The data folder is never deleted without `--purge-data`, so you
+can reinstall later and keep the laws you already downloaded.
 
 ## Common problems
 
