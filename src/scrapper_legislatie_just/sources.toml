@@ -155,12 +155,13 @@ Stabilește principiile de bază ale contabilității, obligațiile entitățilo
 """
 
 [[sources]]
-numar_link = 785
-nume = "Legea nr. 26/1990 – Registrul Comerțului"
+numar_link = 257835
+nume = "Legea nr. 265/2022 – Registrul Comerțului"
 slug = "legea-registrul-comertului"
 descriere = """
-Reglementează funcționarea Registrului Comerțului, înregistrarea firmelor și publicitatea
-actelor și faptelor comerciale.
+Reglementează registrul comerțului: înregistrarea profesioniștilor, mențiunile, radierea,
+rezervarea denumirii, sediul și publicitatea actelor. A abrogat Legea nr. 26/1990
+(art. 140 alin. (1) lit. a)).
 """
 
 [[sources]]
