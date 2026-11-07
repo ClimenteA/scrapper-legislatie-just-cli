@@ -126,6 +126,7 @@ If it stops, run the same command again; existing files are skipped.
 | Query the citation graph | `uv run scrapper-legislatie-just-cli cypher "MATCH (a:Articol) RETURN a.doc AS act LIMIT 5"` |
 | Save a final answer as Markdown | `uv run scrapper-legislatie-just-cli save-answer "cate zile de concediu am?" --answer-file raspuns.md` |
 | List PDFs/images you added | `uv run scrapper-legislatie-just-cli context-files` |
+| Show the persistent fiscal context | `uv run scrapper-legislatie-just-cli tax-context` |
 | Read a PDF/image with OCR | `uv run scrapper-legislatie-just-cli read-context factura.pdf` |
 | Convert a foreign amount to RON | `uv run scrapper-legislatie-just-cli convert 100 EUR` |
 | Show data locations | `uv run scrapper-legislatie-just-cli paths` |
@@ -287,8 +288,9 @@ everywhere, so all examples below do that.
 The server name is `legislatie`. Clients prefix the tool names with it:
 `legislatie_search` in OpenCode and Kilo, `mcp__legislatie__search` in Claude
 Code. All tools are read-only except `save_answer`, which only writes a new
-Markdown file under `raspunsuri-ai/`; none of them modify the index or the HTML
-files.
+Markdown file under `raspunsuri-ai/`, and `save_user_tax_context`, which only
+writes `date-context/informatii-activitate.toml`; none of them modify the index
+or the HTML files.
 
 ### 4. Connect your client
 
@@ -496,7 +498,8 @@ printf '%s\n' \
 
 You should get two JSON-RPC responses, the second listing `search`, `article`,
 `show`, `neighbors`, `context`, `context_files`, `read_context`,
-`convert_currency`, `save_answer`, `docs`, and `cypher`. With the one-line
+`convert_currency`, `save_answer`, `get_user_tax_context`,
+`save_user_tax_context`, `docs`, and `cypher`. With the one-line
 install, use the installed command on the last line instead:
 `| scrapper-legislatie-just-mcp`. On Windows replace it with
 `.venv\Scripts\python.exe -m scrapper_legislatie_just.mcp_server`, or
@@ -549,6 +552,74 @@ If you do not use MCP, the assistant can still run the CLI commands from this
 README, but it will not automatically get the index tools described in
 `AGENTS.md`.
 
+### If a tool is missing
+
+OpenCode starts the MCP server once, when the session starts. If you upgrade the
+package (or edit the server code) while a session is open, the assistant keeps
+the old tool list. A missing `convert_currency` or `get_user_tax_context` is a
+sign of a stale server, and without it the model may fall back to `curl` for BNR
+rates. Close and reopen OpenCode, then check `/mcps` again. The rules in
+`AGENTS.md` tell the assistant to use `legislatie_convert_currency` first and to
+fall back to a shell or web request only when the MCP tool is missing or
+failing, saying so explicitly in the answer.
+
+## Persistent fiscal context
+
+The assistant can personalise fiscal answers from a small TOML file:
+
+```text
+date-context/informatii-activitate.toml
+```
+
+It is optional. Before answering a new legal or fiscal question, the assistant
+calls `legislatie_get_user_tax_context`. If the file is missing, the assistant
+offers a short questionnaire once: legal form, activity, CAEN code, tax regime,
+VAT status, employees, activity zone and optional details. The user can decline
+and still get the general legal answer; the assistant shows a short warning and
+continues.
+
+When the user confirms, the assistant calls
+`legislatie_save_user_tax_context` with only the confirmed fields. The tool
+creates the folder and file, merges the values, keeps fields it does not know,
+and verifies the written TOML. Values are stored as readable text, not as
+internal codes.
+
+Example file:
+
+```toml
+[activitate]
+forma_juridica = "PFA/II/IF"
+domeniu = "Servicii IT și dezvoltare software"
+caen = "6202"
+regim_impozitare = "Sistem real (PFA/II/IF)"
+statut_tva = "Neplătitor de TVA (regim de scutire)"
+are_angajati = false
+zona_activitate = "Exclusiv în România"
+```
+
+`date-context/` is in `.gitignore`, so the context stays local. The file is
+plain TOML: add fields freely or edit it by hand; unknown fields are preserved
+when the assistant updates the file. Do not store CNP, personal address, IBAN
+or other data that is not needed to personalise a fiscal answer.
+
+With an MCP client the two operations are:
+
+```text
+get_user_tax_context()
+save_user_tax_context({"statut_tva": "Plătitor de TVA (perioadă lunară)"})
+```
+
+To inspect exactly what the assistant sees:
+
+```bash
+uv run scrapper-legislatie-just-cli tax-context
+```
+
+If the file is invalid TOML, the read tool reports the parse error and the
+assistant continues with the general legal answer instead of failing. The
+existing file is never overwritten silently while it is invalid; fix or delete
+it before updating.
+
 ## Where the files are
 
 Everything is stored in `legislatie-descarcata/` in the directory where you run
@@ -562,6 +633,7 @@ legislatie-descarcata/
 └── 4-processed/  search index, citation graph, AGENTS.md
 
 date-context/     PDFs, images and screenshots supplied by the user
+├── informatii-activitate.toml  optional persistent fiscal context
 └── .converted/   cached Docling Markdown extractions
 ```
 
@@ -819,7 +891,7 @@ runs in the same virtualenv as the CLI. The installed command is
 uv run python -m scrapper_legislatie_just.mcp_server
 ```
 
-It speaks JSON-RPC 2.0 over stdin/stdout and exposes eleven tools:
+It speaks JSON-RPC 2.0 over stdin/stdout and exposes thirteen tools:
 
 | Tool | Purpose |
 |---|---|
@@ -831,11 +903,13 @@ It speaks JSON-RPC 2.0 over stdin/stdout and exposes eleven tools:
 | `context_files` | Lists user PDFs/images in `date-context/` |
 | `read_context` | Extracts text from a user PDF/image with Docling OCR |
 | `convert_currency` | Converts a foreign amount to RON with the BNR rate and effective date |
+| `get_user_tax_context` | Reads the optional fiscal context from `date-context/informatii-activitate.toml` |
+| `save_user_tax_context` | Creates or updates that TOML file, preserving fields not being changed |
 | `save_answer` | Writes the final answer to `raspunsuri-ai/<question-slug>.md` |
 | `docs` | Indexed acts and their consolidation dates |
 | `cypher` | Cypher query over `4-processed/graph.db`; see [The citation graph and Cypher](#the-citation-graph-and-cypher) |
 
-All tools are read-only except `save_answer`.
+All tools are read-only except `save_answer` and `save_user_tax_context`.
 
 See [Using it with an AI assistant](#using-it-with-an-ai-assistant) for the
 per-client configuration, and [Common problems](#common-problems) when a client

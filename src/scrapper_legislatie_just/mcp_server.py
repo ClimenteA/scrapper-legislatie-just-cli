@@ -3,10 +3,11 @@
 OpenCode starts this process and speaks JSON-RPC 2.0 over stdin/stdout. The
 server exposes tools that mirror the CLI: search, article, show, neighbors,
 context, docs, an optional Cypher query over ``graph.db``, currency conversion
-with BNR rates and ``save_answer``, which writes the final answer to
-``raspunsuri-ai/<question-slug>.md``.
+with BNR rates, the persistent fiscal context in
+``date-context/informatii-activitate.toml`` and ``save_answer``, which writes
+the final answer to ``raspunsuri-ai/<question-slug>.md``.
 
-All tools except ``save_answer`` are read-only.
+All tools except ``save_answer`` and ``save_user_tax_context`` are read-only.
 
 No third-party MCP SDK is required, so the server works in a plain virtualenv.
 """
@@ -271,6 +272,66 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "get_user_tax_context",
+        "description": (
+            "Citeste contextul fiscal persistent al utilizatorului din "
+            "date-context/informatii-activitate.toml si il intoarce "
+            "structurat. Apelat automat inainte de orice intrebare "
+            "legislativa sau fiscala. Daca fisierul lipseste, intoarce "
+            "starea 'neconfigurat' si chestionarul optional; daca este "
+            "invalid, intoarce eroarea fara sa blocheze raspunsul."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "context_dir": {
+                    "type": "string",
+                    "description": (
+                        "Folder alternativ. Implicit: ./date-context sau "
+                        "$SCRAPPER_CONTEXT_DIR."
+                    ),
+                },
+            },
+        },
+    },
+    {
+        "name": "save_user_tax_context",
+        "description": (
+            "Creeaza sau actualizeaza date-context/informatii-activitate.toml "
+            "cu informatiile confirmate de utilizator. Trimite doar campurile "
+            "care se schimba; campurile existente se pastreaza. Nu scrie alte "
+            "fisiere."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "updates": {
+                    "type": "object",
+                    "description": (
+                        "Campurile de salvat, ex. {\"forma_juridica\": \"PFA/II/IF\", "
+                        "\"statut_tva\": \"Neplătitor de TVA (regim de scutire)\"}."
+                    ),
+                    "additionalProperties": True,
+                },
+                "context_dir": {
+                    "type": "string",
+                    "description": (
+                        "Folder alternativ. Implicit: ./date-context sau "
+                        "$SCRAPPER_CONTEXT_DIR."
+                    ),
+                },
+                "merge": {
+                    "type": "boolean",
+                    "description": (
+                        "Pastreaza campurile existente care nu apar in "
+                        "'updates'. Implicit true."
+                    ),
+                },
+            },
+            "required": ["updates"],
+        },
+    },
+    {
         "name": "docs",
         "description": "Lista actelor indexate, cu data consolidarii.",
         "inputSchema": {"type": "object", "properties": {}},
@@ -363,6 +424,23 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> str:
             f"Slug: {saved['slug']}\n"
             f"Link: {saved['link']}"
         )
+
+    # The fiscal context is plain TOML in date-context; it must work even
+    # before the legal index exists.
+    if name == "get_user_tax_context":
+        from .tax_context import format_tax_context, read_tax_context
+
+        return format_tax_context(read_tax_context(arguments.get("context_dir")))
+
+    if name == "save_user_tax_context":
+        from .tax_context import format_save_result, save_tax_context
+
+        saved = save_tax_context(
+            arguments.get("updates") or {},
+            context_dir=arguments.get("context_dir"),
+            merge=bool(arguments.get("merge", True)),
+        )
+        return format_save_result(saved)
 
     if name in {"context_files", "read_context"}:
         from .context_files import (

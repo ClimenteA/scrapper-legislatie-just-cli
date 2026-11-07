@@ -59,6 +59,10 @@ _Versiune consolidata: <data>. Linkurile se deschid in HTML-ul descarcat._
 Daca raspunsul foloseste si un fisier din `date-context`, adauga linkul lui
 `file://` la final, sub aceeasi linie de sursa.
 
+Daca folosesti contextul fiscal din `date-context/informatii-activitate.toml`,
+personalizeaza formularea, dar nu repeta toate datele si nu include CNP, adresa
+personala, IBAN sau alte informatii care nu sunt relevante pentru intrebare.
+
 ## Salvare
 
 Dupa redactare, salveaza raspunsul in folderul `raspunsuri-ai/`, cu numele

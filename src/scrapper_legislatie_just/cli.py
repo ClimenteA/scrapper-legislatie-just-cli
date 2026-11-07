@@ -476,6 +476,20 @@ def context_files_cmd(
     typer.echo(format_context_list(list_context_files(root), root))
 
 
+@app.command("tax-context")
+def tax_context_cmd(
+    context_dir: Optional[Path] = typer.Option(
+        None,
+        "--context-dir",
+        help="Folderul cu informatii-activitate.toml. Implicit: ./date-context.",
+    ),
+) -> None:
+    """Show the persistent fiscal context read by the MCP tool."""
+    from .tax_context import format_tax_context, read_tax_context
+
+    typer.echo(format_tax_context(read_tax_context(context_dir)))
+
+
 @app.command("read-context")
 def read_context_cmd(
     path: Optional[str] = typer.Argument(

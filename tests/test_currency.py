@@ -132,6 +132,27 @@ def test_mcp_lists_convert_currency():
     assert "convert_currency" in names
 
 
+def test_mcp_lists_every_tool():
+    """A stale or partial server makes the model fall back to curl."""
+    response = handle({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+    names = {tool["name"] for tool in response["result"]["tools"]}
+    assert names == {
+        "search",
+        "article",
+        "show",
+        "neighbors",
+        "context",
+        "context_files",
+        "read_context",
+        "convert_currency",
+        "save_answer",
+        "get_user_tax_context",
+        "save_user_tax_context",
+        "docs",
+        "cypher",
+    }
+
+
 def test_cli_convert(bnr):
     runner = CliRunner()
     result = runner.invoke(
