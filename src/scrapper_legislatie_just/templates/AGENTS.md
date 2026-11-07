@@ -45,7 +45,9 @@ trimeata la ancora exacta din HTML-ul original, nu la un rezumat.
 
 ## Tool-uri
 
-Toate tool-urile sunt Read-only si intorc linkuri `file://`.
+Tool-urile de citire nu modifica fisierele sursa si intorc linkuri `file://`.
+`read_context` scrie doar cache-ul de conversie in `date-context/.converted/`,
+iar `save_answer` scrie raspunsul final in `raspunsuri-ai/`.
 
 - `legislatie_search(query, doc=None, kind=None, limit=8)` — cautare BM25 în
   tot corpusul; intoarce articolul, fragmentul si linkul catre ancora exacta.
@@ -63,9 +65,32 @@ Toate tool-urile sunt Read-only si intorc linkuri `file://`.
   si muchii `CITEAZA` / `MENTIONEAZA`, plus variantele agregate `*_ARTICOL` cu
   proprietatea `count`. Nu cauta in textul legii; pentru text foloseste
   `search` sau `context`.
+- `legislatie_context_files()` — lista PDF-urile si imaginile puse de
+  utilizator in `date-context/`, cu link `file://`.
+- `legislatie_read_context(path, pages=None, max_chars=120000, ocr=True)` —
+  converteste un PDF/o imagine din `date-context/` (sau o cale primita prin
+  drag-and-drop) in Markdown cu Docling OCR (romana/engleza). Rezultatul este
+  cache-uit. Intoarce textul extras si linkul `SURSA: file://...`.
 - `legislatie_save_answer(question, answer, output_dir=None)` — scrie
   raspunsul final in `raspunsuri-ai/<slug>.md` si intoarce linkul `file://`.
-  Singurul tool care scrie pe disc; foloseste-l dupa fiecare raspuns.
+  Foloseste-l dupa fiecare raspuns.
+
+### Fisierele utilizatorului (PDF, imagini, screenshot-uri)
+
+Daca intrebarea se refera la un document pus de utilizator (factura, contract,
+notificare, screenshot), nu raspunde din memorie si nu inventa continutul:
+
+1. `legislatie_context_files()` — vezi ce fisiere sunt in `date-context/`.
+2. `legislatie_read_context(path="nume.pdf")` — extrage textul cu Docling OCR.
+   Pentru PDF-uri lungi foloseste `pages="1-10"` si repeta pentru restul.
+3. Citeste textul returnat si citeaza fisierul cu linkul `SURSA: file://...`
+   primit de la tool.
+4. Daca documentul ridica o problema juridica, cauta si in indexul legal cu
+   `legislatie_search` / `legislatie_context`; raspunsul final separa clar
+   continutul documentului utilizatorului de temeiul legal.
+
+Fisierele din `date-context` nu fac parte din corpusul legislativ; sunt dovezi
+aduse de utilizator. Nu le trata ca texte de lege.
 
 ## Formatul raspunsului
 

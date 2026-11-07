@@ -122,6 +122,74 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "context_files",
+        "description": (
+            "Lista PDF-urile si imaginile puse de utilizator in folderul "
+            "date-context, cu marime, data si link file://. Foloseste-l inainte "
+            "de read_context cand nu stii numele fisierului."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "context_dir": {
+                    "type": "string",
+                    "description": (
+                        "Folder alternativ. Implicit: ./date-context sau "
+                        "$SCRAPPER_CONTEXT_DIR."
+                    ),
+                },
+            },
+        },
+    },
+    {
+        "name": "read_context",
+        "description": (
+            "Citeste un PDF, o imagine sau un screenshot pus de utilizator in "
+            "date-context (sau orice cale primita prin drag-and-drop) si il "
+            "converteste in Markdown cu Docling OCR (romana/engleza). "
+            "Rezultatul este cache-uit; a doua citire este instant. Intoarce "
+            "textul extras si linkul file:// catre fisierul original. Daca "
+            "lipseste 'path', listeaza fisierele din date-context."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": (
+                        "Cale absoluta/relativa, nume de fisier in date-context "
+                        "sau URI file://."
+                    ),
+                },
+                "pages": {
+                    "type": "string",
+                    "description": "Pentru PDF: '3' sau '1-5'. Implicit: toate.",
+                },
+                "max_chars": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1000000,
+                    "description": "Limita de caractere returnate. Implicit 120000.",
+                },
+                "force": {
+                    "type": "boolean",
+                    "description": "Reface conversia, ignorand cache-ul.",
+                },
+                "ocr": {
+                    "type": "boolean",
+                    "description": "Ruleaza OCR. Implicit true.",
+                },
+                "context_dir": {
+                    "type": "string",
+                    "description": (
+                        "Folder alternativ. Implicit: ./date-context sau "
+                        "$SCRAPPER_CONTEXT_DIR."
+                    ),
+                },
+            },
+        },
+    },
+    {
         "name": "save_answer",
         "description": (
             "Salveaza raspunsul final in Markdown in folderul raspunsuri-ai, "
@@ -237,6 +305,30 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> str:
             f"Slug: {saved['slug']}\n"
             f"Link: {saved['link']}"
         )
+
+    if name in {"context_files", "read_context"}:
+        from .context_files import (
+            MAX_CHARS_DEFAULT,
+            format_context_list,
+            format_context_result,
+            list_context_files,
+            read_context,
+        )
+        from .config import resolve_context_dir
+
+        root = resolve_context_dir(arguments.get("context_dir"))
+        if name == "context_files" or not arguments.get("path"):
+            return format_context_list(list_context_files(root), root)
+
+        result = read_context(
+            arguments["path"],
+            directory=root,
+            pages=arguments.get("pages"),
+            max_chars=int(arguments.get("max_chars", MAX_CHARS_DEFAULT)),
+            force=bool(arguments.get("force", False)),
+            ocr=bool(arguments.get("ocr", True)),
+        )
+        return format_context_result(result)
 
     if name == "cypher":
         from .config import resolve_data_dir, step_dir

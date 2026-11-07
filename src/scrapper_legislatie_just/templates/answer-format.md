@@ -34,7 +34,11 @@ Reguli:
 - spune cine poate face ce si in ce conditii;
 - daca exista o exceptie, pune un punct separat cu linkul ei;
 - daca o exceptie are la randul ei o exceptie, spune-o explicit;
-- nu pune mai mult de 6–8 puncte; grupeaza prevederile inrudite.
+- nu pune mai mult de 6–8 puncte; grupeaza prevederile inrudite;
+- daca raspunsul se bazeaza pe un document al utilizatorului (PDF, imagine,
+  screenshot), citeste-l intai cu `legislatie_read_context` si citeaza-l cu
+  linkul `SURSA: file://...` primit. Separa dovada (documentul) de temeiul
+  legal (articolul de lege).
 
 ## Exceptii / atentionari
 
@@ -51,6 +55,9 @@ Optional, dar obligatoriu daca exista exceptii. Format:
 ```markdown
 _Versiune consolidata: <data>. Linkurile se deschid in HTML-ul descarcat._
 ```
+
+Daca raspunsul foloseste si un fisier din `date-context`, adauga linkul lui
+`file://` la final, sub aceeasi linie de sursa.
 
 ## Salvare
 

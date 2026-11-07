@@ -3,6 +3,7 @@ from pathlib import Path
 
 DATA_ROOT_NAME = "legislatie-descarcata"
 ANSWERS_DIR_NAME = "raspunsuri-ai"
+CONTEXT_DIR_NAME = "date-context"
 
 # Folder names are prefixed with the pipeline step that writes into them.
 STEP_DIRS = {
@@ -53,4 +54,18 @@ def resolve_answers_dir(output_dir: str | Path | None = None) -> Path:
     else:
         env_dir = os.getenv("SCRAPPER_ANSWERS_DIR")
         root = Path(env_dir).expanduser() if env_dir else Path.cwd() / ANSWERS_DIR_NAME
+    return root.resolve()
+
+
+def resolve_context_dir(directory: str | Path | None = None) -> Path:
+    """Return the folder for user-provided PDFs/images (``date-context``).
+
+    Priority: explicit ``directory``, then ``$SCRAPPER_CONTEXT_DIR``, then
+    ``<cwd>/date-context``. The folder is not created here; the reader does it.
+    """
+    if directory:
+        root = Path(directory).expanduser()
+    else:
+        env_dir = os.getenv("SCRAPPER_CONTEXT_DIR")
+        root = Path(env_dir).expanduser() if env_dir else Path.cwd() / CONTEXT_DIR_NAME
     return root.resolve()

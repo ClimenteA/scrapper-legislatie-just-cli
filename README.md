@@ -125,9 +125,49 @@ If it stops, run the same command again; existing files are skipped.
 | List indexed acts | `uv run scrapper-legislatie-just-cli docs` |
 | Query the citation graph | `uv run scrapper-legislatie-just-cli cypher "MATCH (a:Articol) RETURN a.doc AS act LIMIT 5"` |
 | Save a final answer as Markdown | `uv run scrapper-legislatie-just-cli save-answer "cate zile de concediu am?" --answer-file raspuns.md` |
+| List PDFs/images you added | `uv run scrapper-legislatie-just-cli context-files` |
+| Read a PDF/image with OCR | `uv run scrapper-legislatie-just-cli read-context factura.pdf` |
 | Show data locations | `uv run scrapper-legislatie-just-cli paths` |
 
 Use `--help` after any command to see its options.
+
+## Reading user PDFs and screenshots
+
+The legal index only contains laws. Documents supplied by the user (invoices,
+contracts, notices, screenshots) are read separately from the `date-context/`
+folder next to the data folder:
+
+```bash
+mkdir -p date-context
+cp ~/Downloads/factura.pdf date-context/
+uv run scrapper-legislatie-just-cli context-files
+uv run scrapper-legislatie-just-cli read-context factura.pdf
+```
+
+`read-context` uses the Docling/EasyOCR stack already installed for the legal
+pipeline. It accepts PDF, PNG, JPG/JPEG, WEBP, TIFF/TIF, BMP and GIF. The first
+conversion may download the Docling/EasyOCR models; later conversions use the
+local cache. The Markdown extraction is cached in `date-context/.converted/`,
+so the second read is instant. Useful options:
+
+```bash
+# only pages 1-3 of a long PDF
+uv run scrapper-legislatie-just-cli read-context contract.pdf --pages 1-3
+
+# redo the conversion, ignoring the cache
+uv run scrapper-legislatie-just-cli read-context scan.png --force
+
+# disable OCR for a PDF that already has a text layer
+uv run scrapper-legislatie-just-cli read-context contract.pdf --no-ocr
+```
+
+The same functionality is exposed to AI clients as the `legislatie_context_files`
+and `legislatie_read_context` MCP tools. The file path may be absolute, relative
+to the current directory, a bare name inside `date-context/`, or a `file://`
+URI. In OpenCode, drag the file into the chat and pass the path it gives you to
+`legislatie_read_context`; or copy the file into `date-context/` and use the
+bare file name. Use `$SCRAPPER_CONTEXT_DIR` or `--context-dir` to store the
+files elsewhere.
 
 ## What each step does
 
@@ -434,7 +474,8 @@ printf '%s\n' \
 ```
 
 You should get two JSON-RPC responses, the second listing `search`, `article`,
-`show`, `neighbors`, `context`, `save_answer`, `docs`, and `cypher`. With the one-line
+`show`, `neighbors`, `context`, `context_files`, `read_context`, `save_answer`,
+`docs`, and `cypher`. With the one-line
 install, use the installed command on the last line instead:
 `| scrapper-legislatie-just-mcp`. On Windows replace it with
 `.venv\Scripts\python.exe -m scrapper_legislatie_just.mcp_server`, or
@@ -498,11 +539,16 @@ legislatie-descarcata/
 ├── 2-clean/      cleaned HTML
 ├── 3-expanded/   HTML, Markdown, and TOC JSON per act
 └── 4-processed/  search index, citation graph, AGENTS.md
+
+date-context/     PDFs, images and screenshots supplied by the user
+└── .converted/   cached Docling Markdown extractions
 ```
 
 Final answers saved with `save-answer` (or the `save_answer` MCP tool) go to
 `raspunsuri-ai/` next to the data folder, one Markdown file per question. Use
-`--output-dir` or `$SCRAPPER_ANSWERS_DIR` to store them elsewhere.
+`--output-dir` or `$SCRAPPER_ANSWERS_DIR` to store them elsewhere. User files
+read by `read-context` live in `date-context/`; use `--context-dir` or
+`$SCRAPPER_CONTEXT_DIR` to store them elsewhere.
 
 Keep `3-expanded/` and `4-processed/`: result links point to the HTML files in
 `3-expanded/`, and the index lives in `4-processed/`.

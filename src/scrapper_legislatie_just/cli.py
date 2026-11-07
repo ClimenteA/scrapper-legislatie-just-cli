@@ -4,7 +4,12 @@ from typing import Optional
 import typer
 
 from . import __version__
-from .config import STEP_DIRS, resolve_answers_dir, resolve_data_dir
+from .config import (
+    STEP_DIRS,
+    resolve_answers_dir,
+    resolve_context_dir,
+    resolve_data_dir,
+)
 from .logger import configure_logging
 from .sources import surse_legislatie_just
 
@@ -456,6 +461,85 @@ def save_answer_cmd(
     typer.echo(f"Link: {saved['link']}")
 
 
+@app.command("context-files")
+def context_files_cmd(
+    context_dir: Optional[Path] = typer.Option(
+        None,
+        "--context-dir",
+        help="Folderul cu PDF-uri/imagini. Implicit: ./date-context.",
+    ),
+) -> None:
+    """List the PDFs and images dropped into ./date-context."""
+    from .context_files import format_context_list, list_context_files
+
+    root = resolve_context_dir(context_dir)
+    typer.echo(format_context_list(list_context_files(root), root))
+
+
+@app.command("read-context")
+def read_context_cmd(
+    path: Optional[str] = typer.Argument(
+        None,
+        help="Cale absoluta/relativa sau nume de fisier in date-context.",
+    ),
+    pages: Optional[str] = typer.Option(
+        None,
+        "--pages",
+        help="Pentru PDF: '3' sau '1-5'. Implicit: toate paginile.",
+    ),
+    max_chars: int = typer.Option(
+        120_000,
+        "--max-chars",
+        min=1,
+        max=1_000_000,
+        help="Numarul maxim de caractere returnate.",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="Reface conversia, ignorand cache-ul.",
+    ),
+    ocr: bool = typer.Option(
+        True,
+        "--ocr/--no-ocr",
+        help="Ruleaza OCR (necesar pentru scanari si screenshot-uri).",
+    ),
+    context_dir: Optional[Path] = typer.Option(
+        None,
+        "--context-dir",
+        help="Folderul cu PDF-uri/imagini. Implicit: ./date-context.",
+    ),
+) -> None:
+    """Read a user PDF/image and print the Docling Markdown extraction."""
+    from .context_files import (
+        format_context_list,
+        format_context_result,
+        list_context_files,
+        read_context,
+    )
+
+    root = resolve_context_dir(context_dir)
+    if not path:
+        typer.echo(format_context_list(list_context_files(root), root))
+        return
+
+    try:
+        result = read_context(
+            path,
+            directory=root,
+            pages=pages,
+            max_chars=max_chars,
+            force=force,
+            ocr=ocr,
+        )
+    except (FileNotFoundError, ValueError, RuntimeError) as ex:
+        typer.secho(str(ex), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1) from ex
+
+    typer.echo(format_context_result(result))
+
+
 @app.command()
 def docs(
     data_dir: Optional[Path] = typer.Option(None, "--data-dir"),
@@ -625,3 +709,4 @@ def paths(
     for name in STEP_DIRS.values():
         typer.echo(f"{name + ':':<12}{root / name}")
     typer.echo(f"answers:  {resolve_answers_dir()}")
+    typer.echo(f"context:  {resolve_context_dir()}")
