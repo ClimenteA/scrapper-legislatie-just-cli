@@ -1,7 +1,11 @@
 # Format de raspuns (obligatoriu)
 
 Raspunde in romana, cu exact doua secțiuni principale. Nu adauga introduceri
-inainte de `TL;DR`.
+inainte de `INTREBARE`.
+
+## INTREBARE
+
+Intrebarea utilizatorului nemodificata.
 
 ## TL;DR
 
@@ -47,6 +51,19 @@ Optional, dar obligatoriu daca exista exceptii. Format:
 ```markdown
 _Versiune consolidata: <data>. Linkurile se deschid in HTML-ul descarcat._
 ```
+
+## Salvare
+
+Dupa redactare, salveaza raspunsul in folderul `raspunsuri-ai/`, cu numele
+fisierului derivat din intrebare (slug ASCII, fara diacritice):
+
+```bash
+uv run scrapper-legislatie-just-cli save-answer \
+  "Pot deduce TVA la autoturism?" --answer-file raspuns.md
+```
+
+Echivalentul MCP este tool-ul `legislatie_save_answer(question, answer)`.
+Fisierul scris este `raspunsuri-ai/pot-deduce-tva-la-autoturism.md`.
 
 ## Interzis
 

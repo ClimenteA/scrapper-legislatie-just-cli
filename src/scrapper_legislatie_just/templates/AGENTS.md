@@ -23,6 +23,11 @@ trimeata la ancora exacta din HTML-ul original, nu la un rezumat.
    anume, cauta versiunea respectiva si mentioneaza data in raspuns.
 6. **Raspunde in romana**, clar si la obiect. Diacriticele sunt binevenite in
    text, dar linkurile si numerele trebuie pastrate exact.
+7. **Salveaza fiecare raspuns.** Dupa ce ai compus raspunsul in formatul de
+   mai jos, apeleaza `legislatie_save_answer` cu intrebarea nemodificata si
+   raspunsul complet in Markdown. Fisierul se scrie in
+   `raspunsuri-ai/<slug>.md`, unde slug-ul este intrebarea fara diacritice
+   (ex. `Pot deduce TVA?` -> `pot-deduce-tva.md`).
 
 ## Flux recomandat
 
@@ -35,6 +40,8 @@ trimeata la ancora exacta din HTML-ul original, nu la un rezumat.
 4. `legislatie_show` / `legislatie_neighbors` pentru alineatele si exceptiile
    citate. Urmareste trimiterile 1–2 hopuri daca raspunsul depinde de ele.
 5. Abia apoi compune raspunsul in formatul de mai jos.
+6. `legislatie_save_answer` cu intrebarea si raspunsul final, ca sa ramana
+   scris in `raspunsuri-ai/<slug>.md`.
 
 ## Tool-uri
 
@@ -56,8 +63,15 @@ Toate tool-urile sunt Read-only si intorc linkuri `file://`.
   si muchii `CITEAZA` / `MENTIONEAZA`, plus variantele agregate `*_ARTICOL` cu
   proprietatea `count`. Nu cauta in textul legii; pentru text foloseste
   `search` sau `context`.
+- `legislatie_save_answer(question, answer, output_dir=None)` — scrie
+  raspunsul final in `raspunsuri-ai/<slug>.md` si intoarce linkul `file://`.
+  Singurul tool care scrie pe disc; foloseste-l dupa fiecare raspuns.
 
 ## Formatul raspunsului
+
+### INTREBARE
+
+Intrebarea utilizatorului nemodificata.
 
 ### TL;DR
 

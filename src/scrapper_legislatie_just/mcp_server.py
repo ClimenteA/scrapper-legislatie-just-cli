@@ -1,8 +1,11 @@
 """Minimal stdio MCP server for the legal index (standard library only).
 
 OpenCode starts this process and speaks JSON-RPC 2.0 over stdin/stdout. The
-server exposes read-only tools that mirror the CLI: search, article, show,
-neighbors, context, docs and an optional Cypher query over ``graph.db``.
+server exposes tools that mirror the CLI: search, article, show, neighbors,
+context, docs, an optional Cypher query over ``graph.db`` and ``save_answer``,
+which writes the final answer to ``raspunsuri-ai/<question-slug>.md``.
+
+All tools except ``save_answer`` are read-only.
 
 No third-party MCP SDK is required, so the server works in a plain virtualenv.
 """
@@ -119,6 +122,40 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "save_answer",
+        "description": (
+            "Salveaza raspunsul final in Markdown in folderul raspunsuri-ai, "
+            "cu numele fisierului derivat din intrebare (slug ASCII, fara "
+            "diacritice). Trimite intrebarea si raspunsul complet in formatul "
+            "din answer-format.md. Intoarce calea fisierului si un link file://."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "question": {
+                    "type": "string",
+                    "description": "Intrebarea utilizatorului, nemodificata.",
+                },
+                "answer": {
+                    "type": "string",
+                    "description": (
+                        "Raspunsul complet in Markdown, cu sectiunile "
+                        "INTREBARE, TL;DR, TEMEI LEGAL, Exceptii / atentionari "
+                        "si Sursa."
+                    ),
+                },
+                "output_dir": {
+                    "type": "string",
+                    "description": (
+                        "Folder alternativ. Implicit: ./raspunsuri-ai sau "
+                        "$SCRAPPER_ANSWERS_DIR."
+                    ),
+                },
+            },
+            "required": ["question", "answer"],
+        },
+    },
+    {
         "name": "docs",
         "description": "Lista actelor indexate, cu data consolidarii.",
         "inputSchema": {"type": "object", "properties": {}},
@@ -185,6 +222,31 @@ def _format_docs(rows: list[dict[str, Any]]) -> str:
 
 
 def _call_tool(name: str, arguments: dict[str, Any]) -> str:
+    # Writing an answer does not need the legal index; keep it usable even
+    # before ``process`` has built law.db.
+    if name == "save_answer":
+        from .answers import save_answer
+
+        saved = save_answer(
+            arguments["question"],
+            arguments["answer"],
+            output_dir=arguments.get("output_dir"),
+        )
+        return (
+            f"Raspuns salvat: {saved['path']}\n"
+            f"Slug: {saved['slug']}\n"
+            f"Link: {saved['link']}"
+        )
+
+    if name == "cypher":
+        from .config import resolve_data_dir, step_dir
+
+        from .graph import run_cypher
+
+        root = resolve_data_dir()
+        rows = run_cypher(step_dir(root, "processed") / "graph.db", arguments["query"])
+        return json.dumps(rows, ensure_ascii=False, indent=2)
+
     index = _index()
 
     if name == "search":
@@ -226,15 +288,6 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> str:
 
     if name == "docs":
         return _format_docs(index.docs())
-
-    if name == "cypher":
-        from .config import resolve_data_dir, step_dir
-
-        from .graph import run_cypher
-
-        root = resolve_data_dir()
-        rows = run_cypher(step_dir(root, "processed") / "graph.db", arguments["query"])
-        return json.dumps(rows, ensure_ascii=False, indent=2)
 
     raise ValueError(f"Unknown tool: {name}")
 

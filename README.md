@@ -124,6 +124,7 @@ If it stops, run the same command again; existing files are skipped.
 | Read one article | `uv run scrapper-legislatie-just-cli article codul-muncii 145` |
 | List indexed acts | `uv run scrapper-legislatie-just-cli docs` |
 | Query the citation graph | `uv run scrapper-legislatie-just-cli cypher "MATCH (a:Articol) RETURN a.doc AS act LIMIT 5"` |
+| Save a final answer as Markdown | `uv run scrapper-legislatie-just-cli save-answer "cate zile de concediu am?" --answer-file raspuns.md` |
 | Show data locations | `uv run scrapper-legislatie-just-cli paths` |
 
 Use `--help` after any command to see its options.
@@ -213,7 +214,8 @@ everywhere, so all examples below do that.
 
 The server name is `legislatie`. Clients prefix the tool names with it:
 `legislatie_search` in OpenCode and Kilo, `mcp__legislatie__search` in Claude
-Code. All seven tools are read-only: they never modify the index or the HTML
+Code. All tools are read-only except `save_answer`, which only writes a new
+Markdown file under `raspunsuri-ai/`; none of them modify the index or the HTML
 files.
 
 ### 4. Connect your client
@@ -420,7 +422,7 @@ printf '%s\n' \
 ```
 
 You should get two JSON-RPC responses, the second listing `search`, `article`,
-`show`, `neighbors`, `context`, `docs`, and `cypher`. With the one-line
+`show`, `neighbors`, `context`, `save_answer`, `docs`, and `cypher`. With the one-line
 install, use the installed command on the last line instead:
 `| scrapper-legislatie-just-mcp`. On Windows replace it with
 `.venv\Scripts\python.exe -m scrapper_legislatie_just.mcp_server`, or
@@ -445,7 +447,8 @@ for example: `In Codul muncii, cate zile de concediu de odihna am?`
 The assistant calls `legislatie_context` or `legislatie_search`, reads the
 article with `legislatie_article`, follows citations with
 `legislatie_neighbors`, and answers with `file://` links to the exact anchor in
-`3-expanded/`.
+`3-expanded/`. It then calls `legislatie_save_answer`, which writes the answer
+to `raspunsuri-ai/<question-slug>.md` (ASCII slug, no diacritics).
 
 ### Give the assistant the answering rules
 
@@ -484,6 +487,10 @@ legislatie-descarcata/
 ├── 3-expanded/   HTML, Markdown, and TOC JSON per act
 └── 4-processed/  search index, citation graph, AGENTS.md
 ```
+
+Final answers saved with `save-answer` (or the `save_answer` MCP tool) go to
+`raspunsuri-ai/` next to the data folder, one Markdown file per question. Use
+`--output-dir` or `$SCRAPPER_ANSWERS_DIR` to store them elsewhere.
 
 Keep `3-expanded/` and `4-processed/`: result links point to the HTML files in
 `3-expanded/`, and the index lives in `4-processed/`.
@@ -733,7 +740,7 @@ runs in the same virtualenv as the CLI. The installed command is
 uv run python -m scrapper_legislatie_just.mcp_server
 ```
 
-It speaks JSON-RPC 2.0 over stdin/stdout and exposes seven read-only tools:
+It speaks JSON-RPC 2.0 over stdin/stdout and exposes eight tools:
 
 | Tool | Purpose |
 |---|---|
@@ -742,8 +749,11 @@ It speaks JSON-RPC 2.0 over stdin/stdout and exposes seven read-only tools:
 | `show` | One node (article, paragraph, letter, note) with parents and citations |
 | `neighbors` | Incoming and outgoing citations; `subtree=true` covers the article |
 | `context` | Ready-to-read evidence pack for a question |
+| `save_answer` | Writes the final answer to `raspunsuri-ai/<question-slug>.md` |
 | `docs` | Indexed acts and their consolidation dates |
 | `cypher` | Cypher query over `4-processed/graph.db`; see [The citation graph and Cypher](#the-citation-graph-and-cypher) |
+
+All tools are read-only except `save_answer`.
 
 See [Using it with an AI assistant](#using-it-with-an-ai-assistant) for the
 per-client configuration, and [Common problems](#common-problems) when a client

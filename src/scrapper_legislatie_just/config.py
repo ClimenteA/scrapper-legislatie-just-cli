@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 
 DATA_ROOT_NAME = "legislatie-descarcata"
+ANSWERS_DIR_NAME = "raspunsuri-ai"
 
 # Folder names are prefixed with the pipeline step that writes into them.
 STEP_DIRS = {
@@ -39,3 +40,17 @@ def resolve_data_dir(data_dir: str | Path | None = None) -> Path:
     for name in DATA_SUBDIRS:
         (root / name).mkdir(parents=True, exist_ok=True)
     return root
+
+
+def resolve_answers_dir(output_dir: str | Path | None = None) -> Path:
+    """Return the folder for saved answers (``raspunsuri-ai`` by default).
+
+    Priority: explicit ``output_dir``, then ``$SCRAPPER_ANSWERS_DIR``, then
+    ``<cwd>/raspunsuri-ai``. The folder is not created here; the writer does it.
+    """
+    if output_dir:
+        root = Path(output_dir).expanduser()
+    else:
+        env_dir = os.getenv("SCRAPPER_ANSWERS_DIR")
+        root = Path(env_dir).expanduser() if env_dir else Path.cwd() / ANSWERS_DIR_NAME
+    return root.resolve()

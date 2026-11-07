@@ -4,7 +4,7 @@ from typing import Optional
 import typer
 
 from . import __version__
-from .config import STEP_DIRS, resolve_data_dir
+from .config import STEP_DIRS, resolve_answers_dir, resolve_data_dir
 from .logger import configure_logging
 from .sources import surse_legislatie_just
 
@@ -410,6 +410,52 @@ def context(
         index.close()
 
 
+@app.command("save-answer")
+def save_answer_cmd(
+    question: str = typer.Argument(..., help="Intrebarea utilizatorului, nemodificata."),
+    answer: Optional[str] = typer.Option(
+        None,
+        "--answer",
+        "-a",
+        help="Raspunsul in Markdown (alternativ: --answer-file).",
+    ),
+    answer_file: Optional[Path] = typer.Option(
+        None,
+        "--answer-file",
+        "-f",
+        help="Fisier cu raspunsul in Markdown ('-' citeste din stdin).",
+    ),
+    output_dir: Optional[Path] = typer.Option(
+        None,
+        "--output-dir",
+        help="Folderul raspunsurilor. Implicit: ./raspunsuri-ai.",
+    ),
+) -> None:
+    """Save a final answer as raspunsuri-ai/<question-slug>.md."""
+    if answer and answer_file is not None:
+        raise typer.BadParameter("Use either --answer or --answer-file, not both.")
+    if answer_file is not None:
+        if str(answer_file) == "-":
+            import sys
+
+            answer = sys.stdin.read()
+        else:
+            answer = answer_file.read_text(encoding="utf-8")
+    if not answer:
+        raise typer.BadParameter("Provide --answer or --answer-file.")
+
+    from .answers import save_answer
+
+    try:
+        saved = save_answer(question, answer, output_dir=output_dir)
+    except (ValueError, OSError) as ex:
+        typer.secho(str(ex), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1) from ex
+
+    typer.secho(f"Raspuns salvat: {saved['path']}", fg=typer.colors.GREEN)
+    typer.echo(f"Link: {saved['link']}")
+
+
 @app.command()
 def docs(
     data_dir: Optional[Path] = typer.Option(None, "--data-dir"),
@@ -578,3 +624,4 @@ def paths(
     typer.echo(f"data:     {root}")
     for name in STEP_DIRS.values():
         typer.echo(f"{name + ':':<12}{root / name}")
+    typer.echo(f"answers:  {resolve_answers_dir()}")
