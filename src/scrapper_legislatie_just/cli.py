@@ -576,6 +576,28 @@ def cypher(
         typer.echo(row)
 
 
+@app.command("convert")
+def convert_currency(
+    amount: str = typer.Argument(..., help="Suma in valuta straina, ex. 1250.50."),
+    currency: str = typer.Argument(..., help="Cod ISO al valutei, ex. EUR, USD."),
+    date: Optional[str] = typer.Option(
+        None,
+        "--date",
+        "-d",
+        help="Data cursului (YYYY-MM-DD). Implicit: ieri.",
+    ),
+) -> None:
+    """Convert a foreign-currency amount to RON using the BNR reference rate."""
+    from .currency import convert_to_ron, format_conversion
+
+    try:
+        result = convert_to_ron(amount, currency, date)
+    except (ValueError, RuntimeError) as ex:
+        typer.secho(str(ex), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1) from ex
+    typer.echo(format_conversion(result))
+
+
 @app.command("run-all")
 def run_all(
     slug: Optional[list[str]] = typer.Option(

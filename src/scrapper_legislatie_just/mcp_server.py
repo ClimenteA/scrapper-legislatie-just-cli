@@ -2,8 +2,9 @@
 
 OpenCode starts this process and speaks JSON-RPC 2.0 over stdin/stdout. The
 server exposes tools that mirror the CLI: search, article, show, neighbors,
-context, docs, an optional Cypher query over ``graph.db`` and ``save_answer``,
-which writes the final answer to ``raspunsuri-ai/<question-slug>.md``.
+context, docs, an optional Cypher query over ``graph.db``, currency conversion
+with BNR rates and ``save_answer``, which writes the final answer to
+``raspunsuri-ai/<question-slug>.md``.
 
 All tools except ``save_answer`` are read-only.
 
@@ -31,6 +32,16 @@ def _index() -> LegalIndex:
     if _INDEX is None:
         _INDEX = LegalIndex()
     return _INDEX
+
+
+def _currency_hint() -> str:
+    """List BNR currencies for the tool description without breaking startup."""
+    try:
+        from .currency import supported_currencies
+
+        return ", ".join(supported_currencies())
+    except Exception:  # noqa: BLE001 - the tool reports the real error when used
+        return "EUR, USD, GBP, CHF, ..."
 
 
 TOOLS: list[dict[str, Any]] = [
@@ -190,6 +201,42 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "convert_currency",
+        "description": (
+            "Converteste o suma dintr-o valuta straina in RON cu cursul de "
+            "referinta BNR (libraria cursvalutarbnr, cu cache local). "
+            "Intoarce suma in RON, cursul aplicat (1 unitate = X RON) si data "
+            "exacta a cursului. Pentru weekend, sarbatori sau date viitoare "
+            "foloseste cel mai apropiat curs publicat si spune asta explicit. "
+            "Util pentru facturi, contracte si sume din documentele "
+            "utilizatorului."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "number",
+                    "description": "Suma in valuta straina care se converteste.",
+                },
+                "currency": {
+                    "type": "string",
+                    "description": (
+                        "Cod ISO 4217 al valutei. Valute acceptate: "
+                        f"{_currency_hint()}."
+                    ),
+                },
+                "date": {
+                    "type": "string",
+                    "description": (
+                        "Data cursului in format YYYY-MM-DD. Implicit: ieri "
+                        "(ultimul curs disponibil potrivit librariei)."
+                    ),
+                },
+            },
+            "required": ["amount", "currency"],
+        },
+    },
+    {
         "name": "save_answer",
         "description": (
             "Salveaza raspunsul final in Markdown in folderul raspunsuri-ai, "
@@ -290,6 +337,17 @@ def _format_docs(rows: list[dict[str, Any]]) -> str:
 
 
 def _call_tool(name: str, arguments: dict[str, Any]) -> str:
+    # Currency conversion only needs the BNR cache, not the legal index.
+    if name == "convert_currency":
+        from .currency import convert_to_ron, format_conversion
+
+        result = convert_to_ron(
+            arguments["amount"],
+            arguments["currency"],
+            arguments.get("date"),
+        )
+        return format_conversion(result)
+
     # Writing an answer does not need the legal index; keep it usable even
     # before ``process`` has built law.db.
     if name == "save_answer":

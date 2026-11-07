@@ -71,6 +71,10 @@ iar `save_answer` scrie raspunsul final in `raspunsuri-ai/`.
   converteste un PDF/o imagine din `date-context/` (sau o cale primita prin
   drag-and-drop) in Markdown cu Docling OCR (romana/engleza). Rezultatul este
   cache-uit. Intoarce textul extras si linkul `SURSA: file://...`.
+- `legislatie_convert_currency(amount, currency, date=None)` — converteste o
+  suma dintr-o valuta straina in RON cu cursul de referinta BNR. Intoarce suma
+  in RON, cursul aplicat si data exacta a cursului; pentru weekend/sarbatori
+  foloseste cel mai apropiat curs publicat si spune ce data a aplicat.
 - `legislatie_save_answer(question, answer, output_dir=None)` — scrie
   raspunsul final in `raspunsuri-ai/<slug>.md` si intoarce linkul `file://`.
   Foloseste-l dupa fiecare raspuns.
@@ -85,7 +89,9 @@ notificare, screenshot), nu raspunde din memorie si nu inventa continutul:
    Pentru PDF-uri lungi foloseste `pages="1-10"` si repeta pentru restul.
 3. Citeste textul returnat si citeaza fisierul cu linkul `SURSA: file://...`
    primit de la tool.
-4. Daca documentul ridica o problema juridica, cauta si in indexul legal cu
+4. Daca documentul contine sume in valuta, converteste-le in RON cu
+   `legislatie_convert_currency` si citeaza cursul BNR si data cursului.
+5. Daca documentul ridica o problema juridica, cauta si in indexul legal cu
    `legislatie_search` / `legislatie_context`; raspunsul final separa clar
    continutul documentului utilizatorului de temeiul legal.
 

@@ -127,6 +127,7 @@ If it stops, run the same command again; existing files are skipped.
 | Save a final answer as Markdown | `uv run scrapper-legislatie-just-cli save-answer "cate zile de concediu am?" --answer-file raspuns.md` |
 | List PDFs/images you added | `uv run scrapper-legislatie-just-cli context-files` |
 | Read a PDF/image with OCR | `uv run scrapper-legislatie-just-cli read-context factura.pdf` |
+| Convert a foreign amount to RON | `uv run scrapper-legislatie-just-cli convert 100 EUR` |
 | Show data locations | `uv run scrapper-legislatie-just-cli paths` |
 
 Use `--help` after any command to see its options.
@@ -168,6 +169,26 @@ URI. In OpenCode, drag the file into the chat and pass the path it gives you to
 `legislatie_read_context`; or copy the file into `date-context/` and use the
 bare file name. Use `$SCRAPPER_CONTEXT_DIR` or `--context-dir` to store the
 files elsewhere.
+
+## Converting foreign amounts to RON
+
+The CLI and the MCP server convert foreign-currency amounts to RON with the BNR
+reference rates, through the installed `cursvalutarbnr` package:
+
+```bash
+uv run scrapper-legislatie-just-cli convert 1250.50 EUR
+uv run scrapper-legislatie-just-cli convert 100 USD --date 2024-08-02
+```
+
+The output shows the converted amount, the applied rate (`1 EUR = 4.9753 RON`)
+and the effective rate date. BNR does not publish rates on weekends and
+holidays, so the closest published rate is used and the output names the date
+that was actually applied. Downloaded rates are cached on disk, so repeated
+conversions work offline.
+
+In an AI client the same conversion is the `legislatie_convert_currency` MCP
+tool, with `amount`, `currency` and an optional `date` (`YYYY-MM-DD`). It is
+useful for invoices or contracts that contain amounts in a foreign currency.
 
 ## What each step does
 
@@ -474,8 +495,8 @@ printf '%s\n' \
 ```
 
 You should get two JSON-RPC responses, the second listing `search`, `article`,
-`show`, `neighbors`, `context`, `context_files`, `read_context`, `save_answer`,
-`docs`, and `cypher`. With the one-line
+`show`, `neighbors`, `context`, `context_files`, `read_context`,
+`convert_currency`, `save_answer`, `docs`, and `cypher`. With the one-line
 install, use the installed command on the last line instead:
 `| scrapper-legislatie-just-mcp`. On Windows replace it with
 `.venv\Scripts\python.exe -m scrapper_legislatie_just.mcp_server`, or
@@ -798,7 +819,7 @@ runs in the same virtualenv as the CLI. The installed command is
 uv run python -m scrapper_legislatie_just.mcp_server
 ```
 
-It speaks JSON-RPC 2.0 over stdin/stdout and exposes eight tools:
+It speaks JSON-RPC 2.0 over stdin/stdout and exposes eleven tools:
 
 | Tool | Purpose |
 |---|---|
@@ -807,6 +828,9 @@ It speaks JSON-RPC 2.0 over stdin/stdout and exposes eight tools:
 | `show` | One node (article, paragraph, letter, note) with parents and citations |
 | `neighbors` | Incoming and outgoing citations; `subtree=true` covers the article |
 | `context` | Ready-to-read evidence pack for a question |
+| `context_files` | Lists user PDFs/images in `date-context/` |
+| `read_context` | Extracts text from a user PDF/image with Docling OCR |
+| `convert_currency` | Converts a foreign amount to RON with the BNR rate and effective date |
 | `save_answer` | Writes the final answer to `raspunsuri-ai/<question-slug>.md` |
 | `docs` | Indexed acts and their consolidation dates |
 | `cypher` | Cypher query over `4-processed/graph.db`; see [The citation graph and Cypher](#the-citation-graph-and-cypher) |
