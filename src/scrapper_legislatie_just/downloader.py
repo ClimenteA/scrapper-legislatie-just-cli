@@ -1,5 +1,6 @@
 import random
 import shutil
+import sqlite3
 import subprocess
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -14,7 +15,7 @@ from tenacity import retry, stop_after_attempt, wait_random_exponential
 from .browser_headers import get_random_headers
 from .config import resolve_data_dir, step_dir
 from .logger import log
-from .misc import jitter_call
+from .misc import extract_file_meta, jitter_call
 from .sources import Sursa
 
 
@@ -50,15 +51,25 @@ class LegislatieJustDownloader:
     force: bool = False
     dry_run: bool = False
     all_versions: bool = False
+    # Full configured source list, used to detect sources that were removed
+    # from sources.toml. It defaults to ``surse`` so programmatic callers that
+    # only pass a subset never delete unrelated files.
+    known_surse: list[Sursa] | None = None
 
     def __post_init__(self):
-        root = resolve_data_dir(self.data_dir)
+        self.root = resolve_data_dir(self.data_dir)
         self.output_dir = (
             Path(self.output_dir).expanduser().resolve()
             if self.output_dir
-            else step_dir(root, "raw")
+            else step_dir(self.root, "raw")
         )
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.clean_dir = step_dir(self.root, "clean")
+        self.expanded_dir = step_dir(self.root, "expanded")
+        self.processed_dir = step_dir(self.root, "processed")
+        self.known_surse = (
+            list(self.known_surse) if self.known_surse is not None else list(self.surse)
+        )
 
     def get_user_agent(self) -> str:
         user_agents = [
@@ -112,12 +123,18 @@ class LegislatieJustDownloader:
 
         historic_div = soup.find("div", id="istoric_fa")
         if not historic_div:
-            log.info("Forma de baza este cea curenta.")
+            log.info(
+                f"Nu exista istoric de consolidari pentru {main_url}; "
+                "folosesc forma curenta."
+            )
             return default_result
 
         all_a_tags = historic_div.find_all("a")
         if not all_a_tags:
-            log.info("Forma de baza este cea curenta.")
+            log.info(
+                f"Nu exista istoric de consolidari pentru {main_url}; "
+                "folosesc forma curenta."
+            )
             return default_result
 
         results = []
@@ -217,7 +234,7 @@ class LegislatieJustDownloader:
 
         try:
             subprocess.run(cmd_list, check=True, capture_output=True, text=True)
-            log.success(f"Am salvat html din linkul {url}")
+            log.success(f"Salvat: {output_html_path} (din {url})")
             return True
         except subprocess.CalledProcessError as e:
             log.error(f"Command failed with exit code {e.returncode}")
@@ -227,22 +244,164 @@ class LegislatieJustDownloader:
                 log.debug(f"Console output: {e.stdout.strip()}")
             raise RuntimeError(f"monolith failed for {url}") from e
 
+    def _existing_versions(self) -> dict[str, set[str]]:
+        """Map each slug to the consolidation dates already saved in ``raw``."""
+        versions: dict[str, set[str]] = {}
+        for path in self.output_dir.glob("*.html"):
+            meta = extract_file_meta(path.name)
+            if not meta:
+                continue
+            versions.setdefault(meta["slug"], set()).add(meta["data_consolidarii"])
+        return versions
+
+    @staticmethod
+    def _format_dates(dates: set[str] | list[str]) -> str:
+        """Render saved dates newest-first, truncating long lists."""
+        ordered = sorted(dates, reverse=True)
+        if not ordered:
+            return "niciuna"
+        shown = ", ".join(ordered[:3])
+        if len(ordered) > 3:
+            shown += f" (+{len(ordered) - 3})"
+        return shown
+
+    def find_orphan_sources(self) -> dict[str, list[Path]]:
+        """Return artifacts that belong to slugs no longer in the source list.
+
+        Sources removed from ``sources.toml`` leave files behind in every
+        pipeline step. The download step is the entry point, so it cleans them
+        before doing any network work.
+        """
+        known_slugs = {s.slug for s in self.known_surse}
+        orphans: dict[str, list[Path]] = {"raw": [], "clean": [], "expanded": []}
+        if not known_slugs:
+            return orphans
+
+        for step_name, directory in (
+            ("raw", self.output_dir),
+            ("clean", self.clean_dir),
+        ):
+            for path in sorted(directory.glob("*.html")):
+                meta = extract_file_meta(path.name)
+                if meta and meta["slug"] not in known_slugs:
+                    orphans[step_name].append(path)
+
+        for path in sorted(self.expanded_dir.iterdir()):
+            if not path.is_dir() or path.name.startswith("."):
+                continue
+            if path.name in known_slugs:
+                continue
+            # Only touch directories that look like an expanded source.
+            looks_like_source = (path / f"toc-{path.name}.json").exists() or any(
+                path.glob("*.html")
+            )
+            if looks_like_source:
+                orphans["expanded"].append(path)
+
+        return orphans
+
+    def _index_has_orphans(self, known_slugs: set[str]) -> bool:
+        """Check whether the processed index still contains removed slugs."""
+        db_path = self.processed_dir / "law.db"
+        if not known_slugs or not db_path.exists():
+            return False
+        try:
+            connection = sqlite3.connect(
+                f"{db_path.resolve().as_uri()}?mode=ro", uri=True
+            )
+            try:
+                rows = connection.execute("SELECT DISTINCT slug FROM docs").fetchall()
+            finally:
+                connection.close()
+        except sqlite3.Error:
+            return False
+        return any(row[0] not in known_slugs for row in rows)
+
+    def remove_orphan_sources(self) -> dict:
+        """Delete files and folders for sources removed from ``sources.toml``.
+
+        When an expanded source is removed, the processed index is invalidated
+        so it cannot keep answering from stale data. The next ``process`` run
+        rebuilds it from the remaining sources.
+        """
+        known_slugs = {s.slug for s in self.known_surse}
+        orphans = self.find_orphan_sources()
+        removed = 0
+
+        for step_name, paths in orphans.items():
+            for path in paths:
+                if self.dry_run:
+                    log.info(
+                        f"[dry-run] As sterge sursa eliminata ({step_name}): {path}"
+                    )
+                    continue
+                if path.is_dir():
+                    shutil.rmtree(path)
+                else:
+                    path.unlink()
+                removed += 1
+                log.warning(f"Am sters sursa eliminata ({step_name}): {path}")
+
+        index_invalidated = False
+        if not self.dry_run and (
+            orphans["expanded"] or self._index_has_orphans(known_slugs)
+        ):
+            for name in (
+                "law.db",
+                "law.db.tmp",
+                "graph.db",
+                "manifest.json",
+                "catalog.json",
+            ):
+                artifact = self.processed_dir / name
+                if artifact.exists():
+                    artifact.unlink()
+                    index_invalidated = True
+            if index_invalidated:
+                log.warning(
+                    "Indexul procesat contine inca surse eliminate; ruleaza 'process' "
+                    "pentru a-l reconstrui."
+                )
+
+        return {"removed": removed, "index_invalidated": index_invalidated}
+
     def download(self) -> dict:
+        # Local cleanup runs first so removed sources never survive a failed
+        # download caused by a missing tool or a network error.
+        cleanup = self.remove_orphan_sources()
+
         # Fail fast before any network calls when the required tool is missing.
         if not self.dry_run:
             find_monolith()
 
         failed_downloads: set[str] = set()
         cache_linkuri_consolidate: dict[str, list[LinkuriConsolidate]] = {}
+        existing_versions = self._existing_versions()
         downloaded = 0
+        skipped = 0
+        new_versions = 0
+
+        mode = "dry-run (doar descoperire)" if self.dry_run else "descarcare"
+        log.info(
+            f"Pornesc {mode} pentru {len(self.surse)} surse. "
+            f"Limita: {self.limit if self.limit is not None else 'fara'}, "
+            f"toate versiunile: {'da' if self.all_versions else 'nu'}, "
+            f"forteaza: {'da' if self.force else 'nu'}."
+        )
+        log.info(f"Fisierele HTML sunt salvate in: {self.output_dir}")
 
         for sursa in self.surse:
             if self.limit is not None and downloaded >= self.limit:
+                log.info(
+                    f"Am atins limita de {self.limit} descarcari; "
+                    "opresc descoperirea de surse."
+                )
                 break
 
             linkuri_consolidate = cache_linkuri_consolidate.get(sursa.slug)
 
             if linkuri_consolidate is None:
+                log.info(f"[{sursa.slug}] Verific consolidarile la {sursa.link}")
                 try:
                     if self.all_versions:
                         linkuri_consolidate = self.preia_linkuri_consolidate(
@@ -252,57 +411,136 @@ class LegislatieJustDownloader:
                         latest = self.preia_cel_mai_recent_link(sursa.link)
                         linkuri_consolidate = [latest] if latest else []
                 except Exception as ex:
-                    log.error(f"Nu pot prelua consolidari pentru {sursa.slug}: {ex}")
+                    log.error(f"[{sursa.slug}] Nu pot prelua consolidari: {ex}")
                     failed_downloads.add(sursa.link or sursa.slug)
                     continue
                 cache_linkuri_consolidate[sursa.slug] = linkuri_consolidate
 
-            log.debug(
-                f"{sursa.slug}: am gasit {len(linkuri_consolidate)} linkuri consolidate"
-            )
+            if not linkuri_consolidate:
+                log.warning(
+                    f"[{sursa.slug}] Nu am gasit nicio consolidare; sar peste sursa."
+                )
+                continue
+
+            local_dates = existing_versions.get(sursa.slug, set())
+            if self.all_versions:
+                log.info(
+                    f"[{sursa.slug}] Am gasit {len(linkuri_consolidate)} versiuni. "
+                    f"Local: {self._format_dates(local_dates)}."
+                )
+            else:
+                log.info(
+                    f"[{sursa.slug}] Cea mai recenta consolidare: "
+                    f"{linkuri_consolidate[0].data_consolidarii}. "
+                    f"Local: {self._format_dates(local_dates)}."
+                )
+
+            source_downloaded = 0
+            source_new = 0
+            source_skipped = 0
 
             for link_consolidat in linkuri_consolidate:
                 if self.limit is not None and downloaded >= self.limit:
                     break
 
+                data_consolidarii = link_consolidat.data_consolidarii
                 numar_link = link_consolidat.link_sursa.rsplit("/", 1)[-1]
-                filename = (
-                    f"{numar_link}-{sursa.slug}-"
-                    f"{link_consolidat.data_consolidarii}.html"
-                )
+                filename = f"{numar_link}-{sursa.slug}-{data_consolidarii}.html"
                 output_html_path = self.output_dir / filename
 
                 if not self.force and output_html_path.exists():
-                    log.debug(f"Skip. Avem deja {filename}")
+                    log.info(
+                        f"[{sursa.slug}] Deja salvat: versiunea {data_consolidarii} "
+                        f"({filename}); sar peste."
+                    )
+                    skipped += 1
+                    source_skipped += 1
                     continue
+
+                is_new_version = (
+                    bool(local_dates) and data_consolidarii not in local_dates
+                )
+                if is_new_version:
+                    new_versions += 1
+                    source_new += 1
+                    log.info(
+                        f"[{sursa.slug}] Versiune noua: {data_consolidarii} "
+                        f"(local: {self._format_dates(local_dates)}). Descarc..."
+                    )
+                elif self.force and output_html_path.exists():
+                    log.info(
+                        f"[{sursa.slug}] Re-descarc versiunea {data_consolidarii} "
+                        f"pentru ca ai folosit --force."
+                    )
+                elif not local_dates:
+                    log.info(
+                        f"[{sursa.slug}] Nu exista date locale. "
+                        f"Descarc versiunea {data_consolidarii}..."
+                    )
+                else:
+                    log.info(
+                        f"[{sursa.slug}] Descarc versiunea {data_consolidarii} "
+                        f"(local: {self._format_dates(local_dates)})."
+                    )
 
                 if self.dry_run:
                     log.info(
-                        f"[dry-run] {link_consolidat.data_consolidarii} "
-                        f"{sursa.slug}: {link_consolidat.link_sursa}"
+                        f"[dry-run] [{sursa.slug}] As descarca versiunea "
+                        f"{data_consolidarii} din {link_consolidat.link_sursa}"
                     )
                     downloaded += 1
+                    source_downloaded += 1
                     continue
 
-                log.debug(f"Preluam date din linkul: {link_consolidat.link_sursa}")
+                log.debug(
+                    f"[{sursa.slug}] Preluam forma printabila din: "
+                    f"{link_consolidat.link_sursa}"
+                )
 
                 try:
                     link_forma_printabila = self.preia_forma_printabila_link(
                         link_consolidat.link_sursa
                     )
                 except Exception as ex:
-                    log.error(f"Nu pot prelua forma printabila: {ex}")
+                    log.error(
+                        f"[{sursa.slug}] Nu pot prelua forma printabila pentru "
+                        f"versiunea {data_consolidarii}: {ex}"
+                    )
                     failed_downloads.add(link_consolidat.link_sursa)
                     continue
+
+                log.info(
+                    f"[{sursa.slug}] Descarc versiunea {data_consolidarii}: "
+                    f"{link_forma_printabila}"
+                )
 
                 try:
                     if self.download_page(link_forma_printabila, output_html_path):
                         downloaded += 1
+                        source_downloaded += 1
+                        existing_versions.setdefault(sursa.slug, set()).add(
+                            data_consolidarii
+                        )
+                        local_dates = existing_versions[sursa.slug]
                     else:
                         failed_downloads.add(link_forma_printabila)
                 except Exception as ex:
-                    log.error(f"Download failed for {link_forma_printabila}: {ex}")
+                    log.error(
+                        f"[{sursa.slug}] Descarcarea versiunii {data_consolidarii} "
+                        f"a esuat ({link_forma_printabila}): {ex}"
+                    )
                     failed_downloads.add(link_forma_printabila)
+
+            if source_downloaded == 0 and source_skipped:
+                log.info(
+                    f"[{sursa.slug}] Nimic nou: toate cele {source_skipped} "
+                    "versiuni sunt deja salvate."
+                )
+            elif source_downloaded:
+                log.info(
+                    f"[{sursa.slug}] Gata: {source_downloaded} descarcate, "
+                    f"{source_new} versiuni noi, {source_skipped} deja existente."
+                )
 
         if failed_downloads:
             log.warning(
@@ -310,8 +548,15 @@ class LegislatieJustDownloader:
                 "Vom incerca mai tarziu."
             )
 
+        log.info(
+            f"Descarcare incheiata: {downloaded} salvate, {skipped} deja existente, "
+            f"{new_versions} versiuni noi, {len(failed_downloads)} esuate."
+        )
+
         return {
             "downloaded": downloaded,
             "failed": len(failed_downloads),
             "failed_urls": sorted(failed_downloads),
+            "orphans_removed": cleanup["removed"],
+            "index_invalidated": cleanup["index_invalidated"],
         }

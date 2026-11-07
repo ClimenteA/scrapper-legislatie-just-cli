@@ -40,12 +40,17 @@ class LegislatieJustExpander:
         return extract_file_meta(filename)
 
     def group_html_by_slug_in_dirs(self) -> int:
-        log.debug("Group htmls by slug")
+        log.info(
+            f"Copiez fisierele curate in foldere pe surse: "
+            f"{self.clean_dir} -> {self.expanded_dir}."
+        )
         copied = 0
+        skipped = 0
 
         for s in self.surse:
             slug_dir = self.expanded_dir / s.slug
             slug_dir.mkdir(parents=True, exist_ok=True)
+            slug_copied = 0
 
             for html_path in self.clean_dir.glob("*.html"):
                 meta = self.extract_file_meta(html_path.name)
@@ -63,13 +68,22 @@ class LegislatieJustExpander:
                     log.debug(f"Copying {html_path.name} to {dest_path}")
                     shutil.copy2(html_path, dest_path)
                     copied += 1
+                    slug_copied += 1
                 else:
                     log.debug(f"Skipping {new_filename}, already exists in {s.slug}")
+                    skipped += 1
 
-        log.debug("Done!")
+            if slug_copied:
+                log.info(f"[{s.slug}] Am copiat {slug_copied} fisiere.")
+
+        log.info(
+            f"Copiere incheiata: {copied} fisiere copiate, "
+            f"{skipped} deja existente."
+        )
         return copied
 
     def create_consolidated_json_toc(self) -> int:
+        log.info("Generez fisierele TOC pentru fiecare sursa...")
         written = 0
 
         for s in self.surse:
@@ -111,7 +125,14 @@ class LegislatieJustExpander:
                 toc_json_path = slug_dir / f"toc-{s.slug}.json"
                 toc_json_path.write_text(json_data, encoding="utf-8")
                 written += 1
+                log.info(
+                    f"[{s.slug}] TOC scris cu "
+                    f"{len(surse_consolidate_sorted)} consolidari."
+                )
+            else:
+                log.warning(f"[{s.slug}] Nu am gasit fisiere HTML pentru TOC.")
 
+        log.info(f"TOC incheiat: {written} fisiere scrise.")
         return written
 
     def create_markdown_files(self) -> dict:
@@ -127,36 +148,49 @@ class LegislatieJustExpander:
         converter = DocumentConverter()
         converted = 0
         skipped = 0
+        candidates = [
+            html_path
+            for s in self.surse
+            for html_path in sorted(
+                (self.expanded_dir / s.slug).glob(f"*{s.slug}*.html")
+            )
+        ]
+        log.info(f"Convertesc {len(candidates)} fisiere HTML in Markdown...")
 
-        for s in self.surse:
-            slug_dir = self.expanded_dir / s.slug
+        for index, html_path in enumerate(candidates, start=1):
+            if self.limit is not None and converted >= self.limit:
+                log.info(f"Am atins limita de {self.limit} fisiere convertite.")
+                break
 
-            for html_path in sorted(slug_dir.glob(f"*{s.slug}*.html")):
-                if self.limit is not None and converted >= self.limit:
-                    break
+            new_path = html_path.parent / f"{html_path.name.replace('.html', '.md')}"
 
-                log.debug(f"Convert html to md: {html_path}")
-
-                new_path = (
-                    html_path.parent / f"{html_path.name.replace('.html', '.md')}"
+            if not self.force and new_path.exists():
+                log.info(
+                    f"[{index}/{len(candidates)}] Deja convertit: "
+                    f"{html_path.name}; sar peste."
                 )
+                skipped += 1
+                continue
 
-                if not self.force and new_path.exists():
-                    log.debug(f"MD path exists: {new_path}")
-                    skipped += 1
-                    continue
+            log.info(
+                f"[{index}/{len(candidates)}] Convertesc: {html_path.name}"
+            )
 
-                try:
-                    html_content = html_path.read_text()
-                    result = converter.convert_string(
-                        html_content, format=InputFormat.HTML, name=html_path.name
-                    )
-                    content = result.document.export_to_markdown()
-                    new_path.write_text(content.strip(), encoding="utf-8")
-                    converted += 1
-                except Exception as ex:
-                    log.exception(f"Nu pot converti {html_path}: {ex}")
+            try:
+                html_content = html_path.read_text()
+                result = converter.convert_string(
+                    html_content, format=InputFormat.HTML, name=html_path.name
+                )
+                content = result.document.export_to_markdown()
+                new_path.write_text(content.strip(), encoding="utf-8")
+                converted += 1
+            except Exception as ex:
+                log.exception(f"Nu pot converti {html_path}: {ex}")
 
+        log.info(
+            f"Conversie incheiata: {converted} fisiere Markdown, "
+            f"{skipped} deja existente."
+        )
         return {"converted": converted, "skipped": skipped}
 
     def expand(self) -> dict:

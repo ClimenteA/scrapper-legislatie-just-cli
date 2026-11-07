@@ -1,5 +1,6 @@
 import json
 import shutil
+import sqlite3
 from datetime import date
 from pathlib import Path
 
@@ -92,6 +93,8 @@ def test_download_requires_monolith(tmp_path, monkeypatch):
         "downloaded": 0,
         "failed": 0,
         "failed_urls": [],
+        "orphans_removed": 0,
+        "index_invalidated": False,
     }
 
 
@@ -189,6 +192,131 @@ def test_downloader_skips_only_the_same_version(tmp_path, monkeypatch):
 
     (raw_dir / f"1577-{SLUG}-2024-06-20.html").write_text("latest")
     assert downloader.download()["downloaded"] == 0
+
+
+def test_downloader_removes_orphan_sources(tmp_path):
+    raw_dir = tmp_path / STEP_DIRS["raw"]
+    clean_dir = tmp_path / STEP_DIRS["clean"]
+    expanded_dir = tmp_path / STEP_DIRS["expanded"]
+    processed_dir = tmp_path / STEP_DIRS["processed"]
+    for directory in (raw_dir, clean_dir, expanded_dir, processed_dir):
+        directory.mkdir(parents=True, exist_ok=True)
+
+    orphan_slug = "sursa-eliminata"
+    keep_file = f"1576-{SLUG}-2024-01-15.html"
+    orphan_file = f"9999-{orphan_slug}-2024-01-15.html"
+
+    (raw_dir / keep_file).write_text("keep")
+    (raw_dir / orphan_file).write_text("orphan")
+    (clean_dir / keep_file).write_text("keep")
+    (clean_dir / orphan_file).write_text("orphan")
+
+    keep_dir = expanded_dir / SLUG
+    orphan_dir = expanded_dir / orphan_slug
+    keep_dir.mkdir()
+    orphan_dir.mkdir()
+    (keep_dir / keep_file).write_text("keep")
+    (orphan_dir / f"toc-{orphan_slug}.json").write_text("{}")
+
+    for name in ("law.db", "graph.db", "manifest.json", "catalog.json"):
+        (processed_dir / name).write_text("stale")
+
+    downloader = LegislatieJustDownloader(
+        surse=[_source()], data_dir=tmp_path, known_surse=[_source()]
+    )
+    result = downloader.remove_orphan_sources()
+
+    assert result == {"removed": 3, "index_invalidated": True}
+    assert (raw_dir / keep_file).exists()
+    assert (clean_dir / keep_file).exists()
+    assert keep_dir.exists()
+    assert not (raw_dir / orphan_file).exists()
+    assert not (clean_dir / orphan_file).exists()
+    assert not orphan_dir.exists()
+    for name in ("law.db", "graph.db", "manifest.json", "catalog.json"):
+        assert not (processed_dir / name).exists()
+
+
+def test_downloader_invalidates_index_with_orphan_slug(tmp_path):
+    processed_dir = tmp_path / STEP_DIRS["processed"]
+    processed_dir.mkdir(parents=True)
+    db_path = processed_dir / "law.db"
+    connection = sqlite3.connect(db_path)
+    connection.execute("CREATE TABLE docs(slug TEXT)")
+    connection.execute("INSERT INTO docs(slug) VALUES('sursa-eliminata')")
+    connection.commit()
+    connection.close()
+
+    downloader = LegislatieJustDownloader(
+        surse=[_source()], data_dir=tmp_path, known_surse=[_source()]
+    )
+    result = downloader.remove_orphan_sources()
+
+    assert result == {"removed": 0, "index_invalidated": True}
+    assert not db_path.exists()
+
+
+def test_downloader_keeps_configured_sources_outside_selection(tmp_path):
+    other_source = next(
+        s for s in surse_legislatie_just if s.slug == "codul-fiscal"
+    )
+    raw_dir = tmp_path / STEP_DIRS["raw"]
+    raw_dir.mkdir(parents=True)
+    other_file = f"{other_source.numar_link}-{other_source.slug}-2024-01-15.html"
+    (raw_dir / other_file).write_text("keep")
+
+    downloader = LegislatieJustDownloader(
+        surse=[_source()],
+        data_dir=tmp_path,
+        known_surse=[_source(), other_source],
+    )
+
+    assert downloader.remove_orphan_sources() == {
+        "removed": 0,
+        "index_invalidated": False,
+    }
+    assert (raw_dir / other_file).exists()
+
+
+def test_downloader_dry_run_keeps_orphan_sources(tmp_path):
+    raw_dir = tmp_path / STEP_DIRS["raw"]
+    raw_dir.mkdir(parents=True)
+    orphan_file = raw_dir / "9999-sursa-eliminata-2024-01-15.html"
+    orphan_file.write_text("orphan")
+
+    downloader = LegislatieJustDownloader(
+        surse=[_source()],
+        data_dir=tmp_path,
+        known_surse=[_source()],
+        dry_run=True,
+    )
+
+    assert downloader.remove_orphan_sources() == {
+        "removed": 0,
+        "index_invalidated": False,
+    }
+    assert orphan_file.exists()
+
+
+def test_download_removes_orphan_sources_before_downloading(tmp_path, monkeypatch):
+    raw_dir = tmp_path / STEP_DIRS["raw"]
+    raw_dir.mkdir(parents=True)
+    orphan_file = raw_dir / "9999-sursa-eliminata-2024-01-15.html"
+    orphan_file.write_text("orphan")
+
+    downloader = LegislatieJustDownloader(
+        surse=[_source()], data_dir=tmp_path, known_surse=[_source()]
+    )
+    monkeypatch.setattr(
+        "scrapper_legislatie_just.downloader.find_monolith", lambda: "monolith"
+    )
+    monkeypatch.setattr(downloader, "preia_linkuri_consolidate", lambda url: [])
+
+    result = downloader.download()
+
+    assert result["orphans_removed"] == 1
+    assert result["index_invalidated"] is False
+    assert not orphan_file.exists()
 
 
 def test_sources_are_loaded_from_toml():

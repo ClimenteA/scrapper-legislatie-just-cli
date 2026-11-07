@@ -226,10 +226,11 @@ class LegalIndexBuilder:
         documents = self._discover_documents()
         if self.limit is not None:
             documents = documents[: self.limit]
+        log.info(f"Am gasit {len(documents)} documente de indexat.")
 
         digest = self._fingerprint(documents)
         if not self.force and self._is_fresh(digest):
-            log.debug("Processed index is up to date")
+            log.info("Indexul este deja la zi; nu reconstruiesc (foloseste --force).")
             return {
                 "documents": len(documents),
                 "nodes": 0,
@@ -251,13 +252,18 @@ class LegalIndexBuilder:
         all_nodes: list[RawNode] = []
         all_anchors: dict[tuple[str, str, str], str] = {}
 
-        for doc in documents:
+        total_docs = len(documents)
+        for index, doc in enumerate(documents, start=1):
             if doc["html_path"] is None:
                 continue
+            log.info(
+                f"[{index}/{total_docs}] Indexez {doc['slug']} "
+                f"(versiunea {doc['version']})..."
+            )
             nodes = self._parse_document(doc, all_anchors)
             all_nodes.extend(nodes)
             all_docs.append(doc)
-            log.debug(f"Processed {doc['slug']} ({len(nodes)} nodes)")
+            log.info(f"[{index}/{total_docs}] {doc['slug']}: {len(nodes)} noduri.")
 
         self._insert_docs(connection, all_docs)
         self._insert_nodes(connection, all_nodes)
@@ -273,6 +279,7 @@ class LegalIndexBuilder:
 
         from .graph import build_graph
 
+        log.info("Construiesc graful de citari dintre articole...")
         graph_result = build_graph(
             nodes=self._graph_nodes(all_nodes, all_docs),
             refs=all_refs,

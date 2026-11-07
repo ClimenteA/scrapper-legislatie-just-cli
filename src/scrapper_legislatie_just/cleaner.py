@@ -1671,21 +1671,33 @@ class LegislatieJustCleaner:
         skipped = 0
         slugs = {s.slug for s in self.surse}
 
+        candidates: list[Path] = []
         for html_path in sorted(self.raw_dir.glob("*.html")):
-            if self.limit is not None and processed >= self.limit:
-                break
-
             meta = extract_file_meta(html_path.name)
-            if not meta or meta["slug"] not in slugs:
-                continue
+            if meta and meta["slug"] in slugs:
+                candidates.append(html_path)
+
+        log.info(
+            f"Curat {len(candidates)} fisiere brute pentru {len(slugs)} surse. "
+            f"Sursa: {self.raw_dir} -> {self.clean_dir} "
+            f"(force: {'da' if self.force else 'nu'})."
+        )
+
+        for index, html_path in enumerate(candidates, start=1):
+            if self.limit is not None and processed >= self.limit:
+                log.info(f"Am atins limita de {self.limit} fisiere curatate.")
+                break
 
             clean_path = self.clean_dir / html_path.name
             if not self.force and clean_path.exists():
-                log.debug(f"Skip. Avem curatat deja sursa {html_path}")
+                log.info(
+                    f"[{index}/{len(candidates)}] Deja curatat: {html_path.name}; "
+                    "sar peste."
+                )
                 skipped += 1
                 continue
 
-            log.debug(f"Cleaning up: {html_path}")
+            log.info(f"[{index}/{len(candidates)}] Curat: {html_path.name}")
 
             html_text = unidecode(html_path.read_text())
             html_text = re.sub(r"<!---->", "", html_text)
@@ -1714,4 +1726,8 @@ class LegislatieJustCleaner:
             clean_path.write_text(soup.prettify(), encoding="utf-8")
             processed += 1
 
+        log.info(
+            f"Curatare incheiata: {processed} fisiere curatate, "
+            f"{skipped} deja existente."
+        )
         return {"cleaned": processed, "skipped": skipped}

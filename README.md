@@ -622,6 +622,11 @@ You can also point to a specific file:
 export SCRAPPER_SOURCES_FILE=/path/to/sources.toml
 ```
 
+Removing a source from `sources.toml` is enough: the next `download` (or
+`run-all`) deletes its files from `1-raw`, `2-clean` and `3-expanded`. If the
+processed index existed, it is invalidated so the next `process` rebuilds it
+without the removed act.
+
 ### Environment variables
 
 | Variable | Purpose |

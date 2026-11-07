@@ -49,6 +49,20 @@ def _run_download(downloader) -> dict:
         raise typer.Exit(code=1) from ex
 
 
+def _report_orphan_cleanup(result: dict) -> None:
+    removed = result.get("orphans_removed", 0)
+    if removed:
+        typer.secho(
+            f"Removed {removed} artifact(s) from sources no longer in sources.toml.",
+            fg=typer.colors.YELLOW,
+        )
+    if result.get("index_invalidated"):
+        typer.secho(
+            "Processed index invalidated; run 'process' to rebuild it.",
+            fg=typer.colors.YELLOW,
+        )
+
+
 def _select_surse(slugs: Optional[list[str]]):
     """Return the configured sources selected by slug (all when omitted)."""
     if not slugs:
@@ -108,6 +122,7 @@ def download(
         force=force,
         dry_run=dry_run,
         all_versions=all_versions,
+        known_surse=list(surse_legislatie_just),
     )
     result = _run_download(downloader)
 
@@ -116,6 +131,7 @@ def download(
         f"{result['failed']} failed.",
         fg=typer.colors.GREEN if not result["failed"] else typer.colors.YELLOW,
     )
+    _report_orphan_cleanup(result)
     if result["failed_urls"]:
         for url in result["failed_urls"]:
             typer.echo(f"  failed: {url}", err=True)
@@ -485,12 +501,14 @@ def run_all(
         force=force,
         dry_run=dry_run,
         all_versions=all_versions,
+        known_surse=list(surse_legislatie_just),
     )
     result = _run_download(downloader)
     typer.echo(
         f"Download complete: {result['downloaded']} saved, "
         f"{result['failed']} failed."
     )
+    _report_orphan_cleanup(result)
 
     if dry_run:
         typer.secho(

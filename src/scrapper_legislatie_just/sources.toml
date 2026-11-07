@@ -377,3 +377,21 @@ descriere = """
 Reglementează drepturile și beneficiile persoanelor cu handicap, inclusiv facilități fiscale
 și indemnizații specifice.
 """
+
+
+[[sources]]
+numar_link = 175654
+nume = "ORDIN nr. 592 din 3 februarie 2016"
+slug = "instructiuni-completare-declaratia-d301"
+descriere = """
+Modelului și conținutului formularului (301) Decont special de taxă pe valoarea adăugată.
+"""
+
+
+[[sources]]
+numar_link = 223871
+nume = "ORDIN nr. 705 din 11 martie 2020"
+slug = "instructiuni-completare-declaratia-d390-vies"
+descriere = """
+Modelul și conținutului formularului (390 VIES) "Declarație recapitulativă privind livrările/achizițiile/prestările intracomunitare"
+"""
