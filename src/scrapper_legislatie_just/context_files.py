@@ -24,7 +24,8 @@ from urllib.parse import unquote, urlparse
 from .config import resolve_context_dir
 
 CACHE_DIR_NAME = ".converted"
-CONVERTER_VERSION = "docling-v1"
+# Bump when the conversion output changes so old caches are not reused.
+CONVERTER_VERSION = "docling-v2"
 
 SUPPORTED_EXTENSIONS = {
     ".pdf": "PDF",
@@ -119,11 +120,15 @@ def _cache_path(
     directory: Path,
     pages: tuple[int, int] | None,
     ocr: bool,
+    include_all_layers: bool,
 ) -> Path:
     digest = hashlib.sha256()
     digest.update(_sha256(path).encode("ascii"))
     digest.update(
-        f"|v={CONVERTER_VERSION}|ocr={int(ocr)}|pages={pages or ''}".encode("ascii")
+        (
+            f"|v={CONVERTER_VERSION}|ocr={int(ocr)}|pages={pages or ''}"
+            f"|layers={'all' if include_all_layers else 'body'}"
+        ).encode("ascii")
     )
     return directory / CACHE_DIR_NAME / f"{digest.hexdigest()}.md"
 
@@ -140,8 +145,16 @@ def _convert_with_docling(
     *,
     ocr: bool,
     pages: tuple[int, int] | None,
+    include_all_layers: bool = True,
 ) -> str:
-    """Convert one PDF/image to Markdown with Docling (CPU, OCR ro/en)."""
+    """Convert one PDF/image to Markdown with Docling (CPU, OCR ro/en).
+
+    Docling splits a document into content layers (body, furniture, background,
+    invisible, notes) and ``export_to_markdown`` exports only the body by
+    default. Invoices, contracts and official letters often carry critical data
+    outside the body (IBAN, VAT number, company registration number, address,
+    footnotes), so by default we export every layer.
+    """
     try:
         from docling.datamodel.base_models import InputFormat
         from docling.datamodel.pipeline_options import (
@@ -155,6 +168,7 @@ def _convert_with_docling(
             ImageFormatOption,
             PdfFormatOption,
         )
+        from docling_core.types.doc.document import ContentLayer
     except ImportError as ex:  # pragma: no cover - depends on the install
         raise RuntimeError(
             "Docling nu este instalat. Ruleaza 'uv sync' (docling este o "
@@ -188,7 +202,12 @@ def _convert_with_docling(
     if pages is not None:
         kwargs["page_range"] = pages
     result = converter.convert(path, **kwargs)
-    return result.document.export_to_markdown().strip()
+    layers = (
+        set(ContentLayer) if include_all_layers else {ContentLayer.BODY}
+    )
+    return result.document.export_to_markdown(
+        included_content_layers=layers
+    ).strip()
 
 
 def find_context_file(
@@ -273,11 +292,16 @@ def read_context(
     max_chars: int = MAX_CHARS_DEFAULT,
     force: bool = False,
     ocr: bool = True,
+    include_all_layers: bool = True,
 ) -> dict[str, Any]:
     """Convert a PDF/image to Markdown and return it with metadata.
 
     ``path`` may point outside ``date-context`` (for drag-and-drop paths in
     other clients). The cache always lives in ``date-context/.converted``.
+
+    ``include_all_layers`` exports every Docling content layer, not just the
+    body: page headers/footers (addresses, IBAN, VAT numbers, company
+    registration numbers), background, invisible text and footnotes.
     """
     source = find_context_file(path, directory)
     if not _is_supported(source):
@@ -295,12 +319,17 @@ def read_context(
     limit = min(int(max_chars), MAX_CHARS_LIMIT)
 
     root = _context_root(directory)
-    cache_path = _cache_path(source, root, page_range, ocr)
+    cache_path = _cache_path(source, root, page_range, ocr, include_all_layers)
     cached = cache_path.is_file() and not force
     if cached:
         markdown = cache_path.read_text(encoding="utf-8")
     else:
-        markdown = _convert_with_docling(source, ocr=ocr, pages=page_range)
+        markdown = _convert_with_docling(
+            source,
+            ocr=ocr,
+            pages=page_range,
+            include_all_layers=include_all_layers,
+        )
         _write_cache(cache_path, markdown)
 
     total_chars = len(markdown)
@@ -314,6 +343,7 @@ def read_context(
         "kind": SUPPORTED_EXTENSIONS.get(source.suffix.lower(), "fisier"),
         "pages": page_range,
         "ocr": ocr,
+        "all_layers": include_all_layers,
         "cached": cached,
         "cache_path": str(cache_path),
         "total_chars": total_chars,
@@ -383,6 +413,7 @@ def format_context_result(result: dict[str, Any]) -> str:
         (
             f"Tip: {result['kind']} | pagini: {page_label} | "
             f"OCR: {'da' if result['ocr'] else 'nu'} | "
+            f"straturi: {'toate' if result.get('all_layers', True) else 'doar body'} | "
             f"cache: {'hit' if result['cached'] else 'miss'}"
         ),
         (

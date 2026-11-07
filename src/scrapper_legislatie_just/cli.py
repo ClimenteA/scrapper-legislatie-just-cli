@@ -519,6 +519,14 @@ def read_context_cmd(
         "--ocr/--no-ocr",
         help="Ruleaza OCR (necesar pentru scanari si screenshot-uri).",
     ),
+    include_all_layers: bool = typer.Option(
+        True,
+        "--all-layers/--body-only",
+        help=(
+            "Include toate straturile Docling (header, footer, note, text "
+            "ascuns). Implicit: toate."
+        ),
+    ),
     context_dir: Optional[Path] = typer.Option(
         None,
         "--context-dir",
@@ -546,6 +554,7 @@ def read_context_cmd(
             max_chars=max_chars,
             force=force,
             ocr=ocr,
+            include_all_layers=include_all_layers,
         )
     except (FileNotFoundError, ValueError, RuntimeError) as ex:
         typer.secho(str(ex), fg=typer.colors.RED, err=True)

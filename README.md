@@ -150,7 +150,10 @@ uv run scrapper-legislatie-just-cli read-context factura.pdf
 pipeline. It accepts PDF, PNG, JPG/JPEG, WEBP, TIFF/TIF, BMP and GIF. The first
 conversion may download the Docling/EasyOCR models; later conversions use the
 local cache. The Markdown extraction is cached in `date-context/.converted/`,
-so the second read is instant. Useful options:
+so the second read is instant. By default it exports every Docling content
+layer (body, headers/footers, background, hidden text, footnotes), because
+invoices and contracts often carry the IBAN, VAT number, company registration
+number and address outside the main body. Useful options:
 
 ```bash
 # only pages 1-3 of a long PDF
@@ -161,6 +164,9 @@ uv run scrapper-legislatie-just-cli read-context scan.png --force
 
 # disable OCR for a PDF that already has a text layer
 uv run scrapper-legislatie-just-cli read-context contract.pdf --no-ocr
+
+# keep only the main body (drop page headers/footers and hidden text)
+uv run scrapper-legislatie-just-cli read-context contract.pdf --body-only
 ```
 
 The same functionality is exposed to AI clients as the `legislatie_context_files`

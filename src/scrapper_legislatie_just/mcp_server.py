@@ -16,8 +16,7 @@ from __future__ import annotations
 
 import json
 import sys
-from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from .query import LegalIndex
 
@@ -159,9 +158,11 @@ TOOLS: list[dict[str, Any]] = [
             "Citeste un PDF, o imagine sau un screenshot pus de utilizator in "
             "date-context (sau orice cale primita prin drag-and-drop) si il "
             "converteste in Markdown cu Docling OCR (romana/engleza). "
-            "Rezultatul este cache-uit; a doua citire este instant. Intoarce "
-            "textul extras si linkul file:// catre fisierul original. Daca "
-            "lipseste 'path', listeaza fisierele din date-context."
+            "Pastreaza implicit toate straturile textului (header, footer, "
+            "note de subsol, text ascuns), pe care Docling le ascunde in mod "
+            "normal. Rezultatul este cache-uit; a doua citire este "
+            "instant. Intoarce textul extras si linkul file:// catre fisierul "
+            "original. Daca lipseste 'path', listeaza fisierele din date-context."
         ),
         "inputSchema": {
             "type": "object",
@@ -190,6 +191,13 @@ TOOLS: list[dict[str, Any]] = [
                 "ocr": {
                     "type": "boolean",
                     "description": "Ruleaza OCR. Implicit true.",
+                },
+                "include_all_layers": {
+                    "type": "boolean",
+                    "description": (
+                        "Include toate straturile Docling (body, header/footer, "
+                        "background, text ascuns, note). Implicit true."
+                    ),
                 },
                 "context_dir": {
                     "type": "string",
@@ -463,6 +471,7 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> str:
             max_chars=int(arguments.get("max_chars", MAX_CHARS_DEFAULT)),
             force=bool(arguments.get("force", False)),
             ocr=bool(arguments.get("ocr", True)),
+            include_all_layers=bool(arguments.get("include_all_layers", True)),
         )
         return format_context_result(result)
 

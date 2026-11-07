@@ -15,7 +15,7 @@ from scrapper_legislatie_just.context_files import (
 from scrapper_legislatie_just.mcp_server import handle
 
 
-def _fake_convert(path, *, ocr, pages):
+def _fake_convert(path, *, ocr, pages, include_all_layers=True):
     suffix = " fara OCR" if not ocr else ""
     page_text = f" pagini {pages[0]}-{pages[1]}" if pages else ""
     return f"Text OCR pentru {Path(path).name}{suffix}{page_text}"
@@ -88,7 +88,7 @@ def test_read_context_uses_cache(tmp_path, monkeypatch):
     source.write_bytes(b"%PDF-1.4 test")
     calls = []
 
-    def fake(path, *, ocr, pages):
+    def fake(path, *, ocr, pages, include_all_layers=True):
         calls.append((Path(path).name, ocr, pages))
         return _fake_convert(path, ocr=ocr, pages=pages)
 
@@ -109,7 +109,7 @@ def test_read_context_force_reconverts(tmp_path, monkeypatch):
     source.write_bytes(b"%PDF-1.4 test")
     calls = []
 
-    def fake(path, *, ocr, pages):
+    def fake(path, *, ocr, pages, include_all_layers=True):
         calls.append(1)
         return f"varianta {len(calls)}"
 
@@ -123,12 +123,46 @@ def test_read_context_force_reconverts(tmp_path, monkeypatch):
     assert len(calls) == 2
 
 
+def test_read_context_passes_include_all_layers(tmp_path, monkeypatch):
+    (tmp_path / "factura.pdf").write_bytes(b"%PDF-1.4 test")
+    seen = {}
+
+    def fake(path, *, ocr, pages, include_all_layers=True):
+        seen["all_layers"] = include_all_layers
+        return "text"
+
+    monkeypatch.setattr(context_files, "_convert_with_docling", fake)
+
+    result = read_context("factura.pdf", tmp_path, include_all_layers=False)
+
+    assert seen["all_layers"] is False
+    assert result["all_layers"] is False
+
+
+def test_read_context_cache_separates_layers(tmp_path, monkeypatch):
+    (tmp_path / "factura.pdf").write_bytes(b"%PDF-1.4 test")
+    calls = []
+
+    def fake(path, *, ocr, pages, include_all_layers=True):
+        calls.append(include_all_layers)
+        return "toate straturile" if include_all_layers else "doar body"
+
+    monkeypatch.setattr(context_files, "_convert_with_docling", fake)
+
+    all_layers = read_context("factura.pdf", tmp_path)
+    body_only = read_context("factura.pdf", tmp_path, include_all_layers=False)
+
+    assert all_layers["markdown"] == "toate straturile"
+    assert body_only["markdown"] == "doar body"
+    assert calls == [True, False]
+
+
 def test_read_context_truncates_long_output(tmp_path, monkeypatch):
     (tmp_path / "lung.pdf").write_bytes(b"%PDF-1.4 test")
     monkeypatch.setattr(
         context_files,
         "_convert_with_docling",
-        lambda path, *, ocr, pages: "x" * 50,
+        lambda path, *, ocr, pages, include_all_layers=True: "x" * 50,
     )
 
     result = read_context("lung.pdf", tmp_path, max_chars=10)
@@ -165,7 +199,7 @@ def test_format_context_result_marks_truncation(tmp_path, monkeypatch):
     monkeypatch.setattr(
         context_files,
         "_convert_with_docling",
-        lambda path, *, ocr, pages: "y" * 30,
+        lambda path, *, ocr, pages, include_all_layers=True: "y" * 30,
     )
 
     text = format_context_result(read_context("lung.pdf", tmp_path, max_chars=5))
