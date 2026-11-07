@@ -281,7 +281,8 @@ environment key is `environment`.
         "scrapper_legislatie_just.mcp_server"
       ],
       "environment": {
-        "SCRAPPER_DATA_DIR": "/abs/path/scrapper-legislatie-just-cli/legislatie-descarcata"
+        "SCRAPPER_DATA_DIR": "/abs/path/scrapper-legislatie-just-cli/legislatie-descarcata",
+        "AGENTS_INSTRUCTIONS_FILE": "./legislatie-descarcata/4-processed/AGENTS.md"
       },
       "enabled": true,
       "timeout": 30000
