@@ -15,13 +15,16 @@ from tenacity import retry, stop_after_attempt, wait_random_exponential
 from .browser_headers import get_random_headers
 from .config import resolve_data_dir, step_dir
 from .logger import log
-from .misc import extract_file_meta, jitter_call
+from .misc import extract_file_meta, html_content_hash, jitter_call
 from .sources import Sursa
 
 
 class LinkuriConsolidate(BaseModel):
     link_sursa: str
     data_consolidarii: str
+    # True when the site has no consolidation history and the date above is
+    # just the download date. Such sources get a content-hash dedup check.
+    fara_data_consolidare: bool = False
 
 
 class MonolithNotFoundError(RuntimeError):
@@ -115,7 +118,9 @@ class LegislatieJustDownloader:
     def preia_linkuri_consolidate(self, main_url: str) -> list[LinkuriConsolidate]:
         default_result = [
             LinkuriConsolidate(
-                link_sursa=main_url, data_consolidarii=date.today().isoformat()
+                link_sursa=main_url,
+                data_consolidarii=date.today().isoformat(),
+                fara_data_consolidare=True,
             )
         ]
 
@@ -254,6 +259,60 @@ class LegislatieJustDownloader:
             versions.setdefault(meta["slug"], set()).add(meta["data_consolidarii"])
         return versions
 
+    def _content_hashes(
+        self, slug: str, exclude: Path | None = None
+    ) -> dict[str, Path]:
+        """Map content hashes to raw files already saved for ``slug``.
+
+        Used only for sources without a consolidation history: their file name
+        contains the download date, so a new run would otherwise add the same
+        law again under a new date.
+        """
+        hashes: dict[str, Path] = {}
+        for path in sorted(self.output_dir.glob("*.html")):
+            if exclude is not None and path == exclude:
+                continue
+            meta = extract_file_meta(path.name)
+            if not meta or meta["slug"] != slug:
+                continue
+            try:
+                hashes.setdefault(html_content_hash(path), path)
+            except Exception as ex:
+                log.warning(
+                    f"[{slug}] Nu pot calcula hash-ul pentru {path.name}: {ex}"
+                )
+        return hashes
+
+    def _prune_old_versions(self, slug: str, keep_path: Path) -> list[Path]:
+        """Delete local versions of ``slug`` other than ``keep_path``.
+
+        In default mode only the latest consolidation should remain. Files are
+        removed from ``raw`` and their counterparts from ``clean``/``expanded``
+        so the next ``process`` does not index stale versions.
+        """
+        removed: list[Path] = []
+        for path in sorted(self.output_dir.glob("*.html")):
+            if path == keep_path:
+                continue
+            meta = extract_file_meta(path.name)
+            if not meta or meta["slug"] != slug:
+                continue
+            for target in (
+                path,
+                self.clean_dir / path.name,
+                self.expanded_dir / slug / path.name,
+                self.expanded_dir / slug / path.with_suffix(".md").name,
+            ):
+                if not target.exists():
+                    continue
+                if self.dry_run:
+                    log.info(f"[dry-run] As sterge versiunea veche: {target}")
+                    continue
+                target.unlink()
+                removed.append(target)
+                log.warning(f"[{slug}] Am sters versiunea veche: {target.name}")
+        return removed
+
     @staticmethod
     def _format_dates(dates: set[str] | list[str]) -> str:
         """Render saved dates newest-first, truncating long lists."""
@@ -317,6 +376,22 @@ class LegislatieJustDownloader:
             return False
         return any(row[0] not in known_slugs for row in rows)
 
+    def _invalidate_processed_index(self) -> bool:
+        """Delete processed artifacts so the next ``process`` rebuilds them."""
+        invalidated = False
+        for name in (
+            "law.db",
+            "law.db.tmp",
+            "graph.db",
+            "manifest.json",
+            "catalog.json",
+        ):
+            artifact = self.processed_dir / name
+            if artifact.exists():
+                artifact.unlink()
+                invalidated = True
+        return invalidated
+
     def remove_orphan_sources(self) -> dict:
         """Delete files and folders for sources removed from ``sources.toml``.
 
@@ -346,17 +421,7 @@ class LegislatieJustDownloader:
         if not self.dry_run and (
             orphans["expanded"] or self._index_has_orphans(known_slugs)
         ):
-            for name in (
-                "law.db",
-                "law.db.tmp",
-                "graph.db",
-                "manifest.json",
-                "catalog.json",
-            ):
-                artifact = self.processed_dir / name
-                if artifact.exists():
-                    artifact.unlink()
-                    index_invalidated = True
+            index_invalidated = self._invalidate_processed_index()
             if index_invalidated:
                 log.warning(
                     "Indexul procesat contine inca surse eliminate; ruleaza 'process' "
@@ -377,9 +442,13 @@ class LegislatieJustDownloader:
         failed_downloads: set[str] = set()
         cache_linkuri_consolidate: dict[str, list[LinkuriConsolidate]] = {}
         existing_versions = self._existing_versions()
+        content_hashes: dict[str, dict[str, Path]] = {}
         downloaded = 0
         skipped = 0
         new_versions = 0
+        duplicates_skipped = 0
+        pruned_files = 0
+        pruned_slugs: set[str] = set()
 
         mode = "dry-run (doar descoperire)" if self.dry_run else "descarcare"
         log.info(
@@ -438,6 +507,7 @@ class LegislatieJustDownloader:
             source_downloaded = 0
             source_new = 0
             source_skipped = 0
+            latest_available = False
 
             for link_consolidat in linkuri_consolidate:
                 if self.limit is not None and downloaded >= self.limit:
@@ -448,6 +518,18 @@ class LegislatieJustDownloader:
                 filename = f"{numar_link}-{sursa.slug}-{data_consolidarii}.html"
                 output_html_path = self.output_dir / filename
 
+                # Sources without a consolidation history use the download
+                # date in the file name. Compare the content hash so a new run
+                # does not add the same law again under a new date.
+                known_hashes: dict[str, Path] | None = None
+                if link_consolidat.fara_data_consolidare:
+                    known_hashes = content_hashes.get(sursa.slug)
+                    if known_hashes is None:
+                        known_hashes = self._content_hashes(
+                            sursa.slug, exclude=output_html_path
+                        )
+                        content_hashes[sursa.slug] = known_hashes
+
                 if not self.force and output_html_path.exists():
                     log.info(
                         f"[{sursa.slug}] Deja salvat: versiunea {data_consolidarii} "
@@ -455,6 +537,7 @@ class LegislatieJustDownloader:
                     )
                     skipped += 1
                     source_skipped += 1
+                    latest_available = True
                     continue
 
                 is_new_version = (
@@ -516,8 +599,37 @@ class LegislatieJustDownloader:
 
                 try:
                     if self.download_page(link_forma_printabila, output_html_path):
+                        if known_hashes is not None:
+                            digest = None
+                            try:
+                                digest = html_content_hash(output_html_path)
+                            except Exception as ex:
+                                log.warning(
+                                    f"[{sursa.slug}] Nu pot calcula hash-ul "
+                                    f"pentru {filename}: {ex}"
+                                )
+                            if digest is not None and digest in known_hashes:
+                                duplicate_of = known_hashes[digest]
+                                output_html_path.unlink(missing_ok=True)
+                                log.warning(
+                                    f"[{sursa.slug}] Continut identic cu "
+                                    f"{duplicate_of.name} (sha256 "
+                                    f"{digest[:12]}); nu adaug duplicatul "
+                                    f"{filename}."
+                                )
+                                if is_new_version:
+                                    new_versions -= 1
+                                    source_new -= 1
+                                duplicates_skipped += 1
+                                skipped += 1
+                                source_skipped += 1
+                                continue
+                            if digest is not None:
+                                known_hashes[digest] = output_html_path
+
                         downloaded += 1
                         source_downloaded += 1
+                        latest_available = True
                         existing_versions.setdefault(sursa.slug, set()).add(
                             data_consolidarii
                         )
@@ -531,6 +643,20 @@ class LegislatieJustDownloader:
                     )
                     failed_downloads.add(link_forma_printabila)
 
+            if not self.all_versions and latest_available and linkuri_consolidate:
+                latest = linkuri_consolidate[0]
+                latest_numar = latest.link_sursa.rsplit("/", 1)[-1]
+                keep_path = (
+                    self.output_dir
+                    / f"{latest_numar}-{sursa.slug}-{latest.data_consolidarii}.html"
+                )
+                if keep_path.exists():
+                    removed = self._prune_old_versions(sursa.slug, keep_path)
+                    if removed:
+                        pruned_files += len(removed)
+                        pruned_slugs.add(sursa.slug)
+                        content_hashes.pop(sursa.slug, None)
+
             if source_downloaded == 0 and source_skipped:
                 log.info(
                     f"[{sursa.slug}] Nimic nou: toate cele {source_skipped} "
@@ -542,15 +668,29 @@ class LegislatieJustDownloader:
                     f"{source_new} versiuni noi, {source_skipped} deja existente."
                 )
 
+        if pruned_slugs and not self.dry_run:
+            if self._invalidate_processed_index():
+                cleanup["index_invalidated"] = True
+            log.warning(
+                f"Am pastrat doar ultima consolidare pentru {len(pruned_slugs)} "
+                f"surse ({pruned_files} fisiere vechi sterse); ruleaza 'process' "
+                "pentru a reconstrui indexul."
+            )
+
         if failed_downloads:
             log.warning(
                 f"Avem {len(failed_downloads)} descarcari nereusite... "
                 "Vom incerca mai tarziu."
             )
 
+        duplicates_note = (
+            f", {duplicates_skipped} duplicate ignorate" if duplicates_skipped else ""
+        )
+        pruned_note = f", {pruned_files} fisiere vechi sterse" if pruned_files else ""
         log.info(
-            f"Descarcare incheiata: {downloaded} salvate, {skipped} deja existente, "
-            f"{new_versions} versiuni noi, {len(failed_downloads)} esuate."
+            f"Descarcare incheiata: {downloaded} salvate, {skipped} deja existente"
+            f"{duplicates_note}{pruned_note}, {new_versions} versiuni noi, "
+            f"{len(failed_downloads)} esuate."
         )
 
         return {

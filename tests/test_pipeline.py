@@ -162,6 +162,166 @@ def test_downloader_falls_back_to_current_date_without_history(tmp_path, monkeyp
 
     assert latest is not None
     assert latest.data_consolidarii == date.today().isoformat()
+    assert latest.fara_data_consolidare is True
+
+
+def test_downloader_skips_fallback_duplicate_by_content_hash(tmp_path, monkeypatch):
+    """Sources without history must not be saved again when the text is unchanged."""
+    raw_dir = tmp_path / STEP_DIRS["raw"]
+    raw_dir.mkdir(parents=True)
+    existing = raw_dir / f"1576-{SLUG}-2024-01-15.html"
+    existing.write_text(
+        "<!-- Saved from https://legislatie.just.ro/x at 2024-01-15T00:00:00Z "
+        "using monolith v2.11.6 -->"
+        "<html><head><meta charset='UTF-8'></head>"
+        "<body><p>Lege</p></body></html>"
+    )
+
+    downloader = LegislatieJustDownloader(surse=[_source()], data_dir=tmp_path)
+    monkeypatch.setattr(
+        "scrapper_legislatie_just.downloader.find_monolith", lambda: "monolith"
+    )
+    fallback = LinkuriConsolidate(
+        link_sursa="https://legislatie.just.ro/Public/DetaliiDocument/1576",
+        data_consolidarii="2026-11-08",
+        fara_data_consolidare=True,
+    )
+    monkeypatch.setattr(
+        downloader, "preia_linkuri_consolidate", lambda url: [fallback]
+    )
+    monkeypatch.setattr(
+        downloader, "preia_forma_printabila_link", lambda url: "https://x/print"
+    )
+
+    def fake_download(url, path):
+        # Different monolith header/serialization, same law text.
+        Path(path).write_text(
+            "<!-- Saved from https://legislatie.just.ro/y at 2026-11-08T00:00:00Z "
+            "using monolith v2.12.0 -->"
+            "<html><head><meta charset='UTF-8'></head>"
+            "<body><p>Lege</p></body></html>"
+        )
+        return True
+
+    monkeypatch.setattr(downloader, "download_page", fake_download)
+
+    result = downloader.download()
+
+    assert result["downloaded"] == 0
+    assert result["failed"] == 0
+    assert sorted(path.name for path in raw_dir.glob("*.html")) == [existing.name]
+
+
+def test_downloader_replaces_fallback_when_content_changed(tmp_path, monkeypatch):
+    raw_dir = tmp_path / STEP_DIRS["raw"]
+    raw_dir.mkdir(parents=True)
+    existing = raw_dir / f"1576-{SLUG}-2024-01-15.html"
+    existing.write_text("<html><body><p>Text vechi</p></body></html>")
+
+    downloader = LegislatieJustDownloader(surse=[_source()], data_dir=tmp_path)
+    monkeypatch.setattr(
+        "scrapper_legislatie_just.downloader.find_monolith", lambda: "monolith"
+    )
+    fallback = LinkuriConsolidate(
+        link_sursa="https://legislatie.just.ro/Public/DetaliiDocument/1576",
+        data_consolidarii="2026-11-08",
+        fara_data_consolidare=True,
+    )
+    monkeypatch.setattr(
+        downloader, "preia_linkuri_consolidate", lambda url: [fallback]
+    )
+    monkeypatch.setattr(
+        downloader, "preia_forma_printabila_link", lambda url: "https://x/print"
+    )
+
+    def fake_download(url, path):
+        Path(path).write_text("<html><body><p>Text nou</p></body></html>")
+        return True
+
+    monkeypatch.setattr(downloader, "download_page", fake_download)
+
+    result = downloader.download()
+
+    assert result["downloaded"] == 1
+    assert not existing.exists()
+    assert [path.name for path in raw_dir.glob("*.html")] == [
+        f"1576-{SLUG}-2026-11-08.html"
+    ]
+
+
+def test_downloader_prunes_older_versions_by_default(tmp_path, monkeypatch):
+    """Default mode keeps only the latest consolidation for each source."""
+    raw_dir = tmp_path / STEP_DIRS["raw"]
+    clean_dir = tmp_path / STEP_DIRS["clean"]
+    expanded_dir = tmp_path / STEP_DIRS["expanded"] / SLUG
+    processed_dir = tmp_path / STEP_DIRS["processed"]
+    for directory in (raw_dir, clean_dir, expanded_dir, processed_dir):
+        directory.mkdir(parents=True)
+
+    old_name = f"1576-{SLUG}-2024-01-15.html"
+    for directory in (raw_dir, clean_dir, expanded_dir):
+        (directory / old_name).write_text("<html><body><p>Text vechi</p></body></html>")
+    (expanded_dir / f"1576-{SLUG}-2024-01-15.md").write_text("Text vechi")
+    (processed_dir / "law.db").write_text("stale")
+
+    downloader = LegislatieJustDownloader(surse=[_source()], data_dir=tmp_path)
+    monkeypatch.setattr(
+        "scrapper_legislatie_just.downloader.find_monolith", lambda: "monolith"
+    )
+    monkeypatch.setattr(
+        downloader, "preia_linkuri_consolidate", lambda url: _consolidari()
+    )
+    monkeypatch.setattr(
+        downloader, "preia_forma_printabila_link", lambda url: "https://x/print"
+    )
+
+    def fake_download(url, path):
+        Path(path).write_text("<html><body><p>Text nou</p></body></html>")
+        return True
+
+    monkeypatch.setattr(downloader, "download_page", fake_download)
+
+    result = downloader.download()
+
+    assert result["downloaded"] == 1
+    assert result["index_invalidated"] is True
+    assert sorted(path.name for path in raw_dir.glob("*.html")) == [
+        f"1577-{SLUG}-2024-06-20.html"
+    ]
+    assert not (clean_dir / old_name).exists()
+    assert not (expanded_dir / old_name).exists()
+    assert not (expanded_dir / f"1576-{SLUG}-2024-01-15.md").exists()
+    assert not (processed_dir / "law.db").exists()
+
+
+def test_downloader_keeps_all_versions_when_requested(tmp_path, monkeypatch):
+    raw_dir = tmp_path / STEP_DIRS["raw"]
+    raw_dir.mkdir(parents=True)
+    old_name = f"1576-{SLUG}-2024-01-15.html"
+    (raw_dir / old_name).write_text("<html><body><p>Text vechi</p></body></html>")
+
+    downloader = LegislatieJustDownloader(
+        surse=[_source()], data_dir=tmp_path, all_versions=True
+    )
+    monkeypatch.setattr(
+        "scrapper_legislatie_just.downloader.find_monolith", lambda: "monolith"
+    )
+    monkeypatch.setattr(
+        downloader, "preia_linkuri_consolidate", lambda url: _consolidari()
+    )
+    monkeypatch.setattr(
+        downloader, "preia_forma_printabila_link", lambda url: "https://x/print"
+    )
+
+    def fake_download(url, path):
+        Path(path).write_text("<html><body><p>Text nou</p></body></html>")
+        return True
+
+    monkeypatch.setattr(downloader, "download_page", fake_download)
+
+    assert downloader.download()["downloaded"] == 1
+    assert (raw_dir / old_name).exists()
+    assert (raw_dir / f"1577-{SLUG}-2024-06-20.html").exists()
 
 
 def test_downloader_all_versions_flag(tmp_path, monkeypatch):

@@ -140,6 +140,17 @@ Use `--help` after any command to see its options.
 
 `run-all` runs all four steps in order.
 
+By default `download` keeps only the most recent consolidation for each source:
+older local versions are removed from `1-raw`, `2-clean` and `3-expanded`, and
+the processed index is invalidated until the next `process`. Use
+`--all-versions` to keep the full consolidation history.
+
+Some acts have no consolidation history on `legislatie.just.ro`. For them the
+download date is used in the file name, so `download` also compares a
+normalized SHA-256 of the saved HTML with the existing versions of the same
+act. If the content is unchanged, the new file is discarded instead of adding
+a duplicate.
+
 ## Using it with an AI assistant
 
 After `process`, the folder `legislatie-descarcata/4-processed/` contains the
