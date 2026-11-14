@@ -42,6 +42,7 @@ STRUCT_CLASSES: dict[str, str] = {
     "S_NTA": "nota",
     "S_NTA_PAR": "nota",
     "S_ANX": "anexa",
+    "S_PRE": "preformatat",
 }
 
 # Classes whose prefix names the label child (e.g. S_ART -> S_ART_TTL).
@@ -104,6 +105,38 @@ CROSS_ART_RE = re.compile(
 
 def clean_text(value: str) -> str:
     return SPACE_RE.sub(" ", value.replace("\u00a0", " ")).strip()
+
+
+PRE_BORDER_CHARS = " │┌┐└┘├┤┬┴┼─-=+_|\t"
+
+
+def preformatted_text(element: Tag) -> str:
+    """Text of a ``<pre>`` block, keeping line breaks and column alignment."""
+    lines = [line.rstrip() for line in element.get_text().splitlines()]
+    out: list[str] = []
+    for line in lines:
+        if not line.strip() and (not out or not out[-1].strip()):
+            continue
+        out.append(line)
+    return "\n".join(out).strip()
+
+
+def preformatted_label(text: str, max_chars: int = 64) -> str:
+    """First meaningful line of a preformatted block, usable as a label.
+
+    Prefers a line made mostly of words over a dotted placeholder
+    (``Entitatea ..........``) or a box-drawing border.
+    """
+    fallback = ""
+    for line in text.splitlines():
+        candidate = clean_text(line.strip(PRE_BORDER_CHARS))
+        if not candidate:
+            continue
+        fallback = fallback or candidate
+        letters = sum(1 for char in candidate if char.isalpha())
+        if letters >= 3 and letters * 2 >= len(candidate):
+            return candidate[:max_chars]
+    return fallback[:max_chars]
 
 
 def normalize(value: str) -> str:
@@ -454,7 +487,10 @@ class LegalIndexBuilder:
 
             label = _label_for(element, kind)
             text = _own_text(element)
-            if kind == "paragraf" and len(text) < 3:
+            if kind == "preformatat":
+                text = preformatted_text(element)
+                label = label or preformatted_label(text)
+            if kind in {"paragraf", "preformatat"} and len(text) < 3:
                 continue
             if kind in {"titlu", "capitol", "sectiune"}:
                 text = ""

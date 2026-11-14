@@ -8,7 +8,6 @@ from pathlib import Path
 
 import markdown
 from bs4 import BeautifulSoup, NavigableString, Tag
-from unidecode import unidecode
 
 from .config import resolve_data_dir, step_dir
 from .logger import log
@@ -120,7 +119,18 @@ STYLES_CSS = """
     }
 
     .S_PRE {
-        white-space:pre;
+        display: block;
+        white-space: pre;
+        overflow-x: auto;
+        font-family: 'Courier New', ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.72rem;
+        line-height: 1.25;
+        margin: 20px 0;
+        padding: 12px 16px;
+        background-color: #fafafa;
+        border: 1px solid #eceff1;
+        border-radius: 3px;
+        tab-size: 4;
     }
 
     .S_ALN {
@@ -858,6 +868,46 @@ class LegislatieJustCleaner:
 
         return soup
 
+    def preserve_preformatted_blocks(self, soup: BeautifulSoup):
+        """Turn ``span.S_PRE`` blocks into real ``<pre>`` elements.
+
+        legislatie.just.ro draws its ASCII tables (box-drawing characters,
+        pipes, dashes) inside ``span.S_PRE`` and separates the lines with
+        ``<br>``. Left as a span with ``<p>`` children the browser drops the
+        wrapper, so the table lines render as loose paragraphs that look like
+        broken Markdown. A ``<pre>`` keeps the columns aligned and makes the
+        Markdown export emit a fenced code block instead of a fake table.
+        """
+        for pre in soup.find_all("span", class_="S_PRE"):
+            if pre.find_parent("pre") is not None:
+                continue
+
+            pre.name = "pre"
+            for br in pre.find_all("br"):
+                br.replace_with("\n")
+
+            # Unwrap styling-only wrappers, keep their text and the newlines.
+            for tag in reversed(pre.find_all(True)):
+                if tag.find_parent("pre") is not None:
+                    tag.unwrap()
+
+            lines = (
+                pre.get_text()
+                .replace("\r\n", "\n")
+                .replace("\r", "\n")
+                .split("\n")
+            )
+            text = "\n".join(line.rstrip() for line in lines).strip("\n")
+
+            if not text.strip():
+                pre.decompose()
+                continue
+
+            pre.clear()
+            pre.append(NavigableString(text))
+
+        return soup
+
     def remove_inline_text_blue_style(self, soup: BeautifulSoup):
         for tag in soup.find_all(attrs={"style": True}):
             s = tag["style"].lower()
@@ -958,8 +1008,6 @@ class LegislatieJustCleaner:
             "width",
             "height",
             "name",
-            "rowspan",
-            "colspan",
             "align",
         ]
         for tag in soup.find_all(True):
@@ -969,8 +1017,10 @@ class LegislatieJustCleaner:
         return soup
 
     def remove_br_tags(self, soup: BeautifulSoup):
+        # A <br> separates words, so it must not vanish without leaving a
+        # space behind ("text<br>more" would otherwise become "textmore").
         for br in soup.find_all("br"):
-            br.decompose()
+            br.replace_with(" ")
         return soup
 
     def remove_abrogated_annexes(self, soup: BeautifulSoup):
@@ -1166,6 +1216,12 @@ class LegislatieJustCleaner:
             for idx, el in enumerate(soup.find_all("span", class_=cls), start=1):
                 if not el.get("id"):
                     el["id"] = f"{cls.lower()}_{idx}"
+
+        # Preformatted blocks are indexed as one node each, so they need an
+        # anchor of their own (they are <pre> now, not <span> any more).
+        for idx, el in enumerate(soup.find_all("pre", class_="S_PRE"), start=1):
+            if not el.get("id"):
+                el["id"] = f"s_pre_{idx}"
 
         # 2. BUILD REFERENCE INDEX
         art_idx: dict[int, str] = {}
@@ -1699,13 +1755,14 @@ class LegislatieJustCleaner:
 
             log.info(f"[{index}/{len(candidates)}] Curat: {html_path.name}")
 
-            html_text = unidecode(html_path.read_text())
+            html_text = html_path.read_text(encoding="utf-8")
             html_text = re.sub(r"<!---->", "", html_text)
 
             soup = BeautifulSoup(html_text, "html5lib")
 
             soup.html["lang"] = "ro"
 
+            soup = self.preserve_preformatted_blocks(soup)
             soup = self.remove_inline_text_blue_style(soup)
             soup = self.remove_empty_spans(soup)
             soup = self.remove_paranthesis_paragraphs(soup)
