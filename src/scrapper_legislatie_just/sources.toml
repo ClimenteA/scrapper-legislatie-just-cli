@@ -395,3 +395,198 @@ slug = "instructiuni-completare-declaratia-d390-vies"
 descriere = """
 Modelul și conținutului formularului (390 VIES) "Declarație recapitulativă privind livrările/achizițiile/prestările intracomunitare"
 """
+
+
+[[sources]]
+numar_link = 7816
+nume = "LEGEA nr. 8 din 14 martie 1996"
+slug = "legea-privind-drepturile-de-autor"
+descriere = """
+Stabilește cadrul juridic pentru recunoașterea și protejarea proprietății intelectuale asupra operelor literare, artistice, științifice și a oricăror alte creații originale din România. 
+Actul normativ reglementează atât drepturile morale și patrimoniale ale autorilor, cât și drepturile conexe ale artiștilor interpreți, producătorilor de înregistrări și organismelor de radiodifuziune/televiziune, incluzând normele privind cesiunea și gestiunea colectivă a acestora. 
+Totodată, legea definește limitele exercitării acestor drepturi (cum ar fi excepțiile pentru uz personal sau scop educațional) și stabilește sancțiunile civile, contravenționale și penale aplicabile în cazul încălcării lor, precum pirateria sau plagiatul.
+"""
+
+
+[[sources]]
+numar_link = 201834
+nume = "REGULAMENT (UE) nr. 679"
+slug = "gdpr-protectia-datelor-cu-caracter-personal"
+descriere = """
+Regulamentul (UE) 2016/679 (GDPR) instituie cadrul juridic unitar la nivelul Uniunii Europene și al Spațiului Economic European pentru protecția persoanelor fizice în ceea ce privește prelucrarea și libera circulație a datelor cu caracter personal. Actul normativ stabilește principiile fundamentale ale prelucrării datelor (legalitate, transparență, limitarea scopului și minimizarea datelor), consolidează drepturile persoanelor vizate (precum dreptul de acces, rectificare, ștergere sau opoziție) și impune obligații stricte operatorilor și persoanelor împuternicite privind securitatea datelor și raportarea breșelor. Totodată, regulamentul reglementează transferurile internaționale de date și prevede sancțiuni administrative severe (amenzi de până la 20 de milioane de euro sau 4% din cifra de afaceri globală) pentru nerespectarea dispozițiilor sale.
+"""
+
+
+[[sources]]
+numar_link = 203151
+nume = "LEGE nr. 190 din 18 iulie 2018"
+slug = "gdpr-aplicare-lege"
+descriere = """
+Stabilește măsurile naționale necesare pentru punerea în aplicare a Regulamentului general privind protecția datelor (GDPR) pe teritoriul României, adaptând normele europene la specificul legislației interne. Actul normativ reglementează situații specifice de prelucrare a datelor, precum prelucrarea Codului Numeric Personal (CNP), a datelor genetice, biometrice sau privind sănătatea, prelucrarea în contextul relațiilor de muncă (monitorizarea angajaților) și excepțiile aplicabile în scop jurnalistic, academic, artistic sau literar. De asemenea, legea stabilește regulile privind desemnarea responsabilului cu protecția datelor (DPO), organismele de certificare și regimul sancționator aplicabil autorităților și instituțiilor publice din România (care beneficiază de un regim derogatoriu, bazat inițial pe avertisment și plan de remediere, urmat de amenzi plafonate la niveluri mult mai reduse decât în sectorul privat).
+"""
+
+
+[[sources]]
+numar_link = 158913
+nume = "OUG nr. 34 din 4 iunie 2014"
+slug = "drepturile-consumatorilor"
+descriere = """
+Stabilește cadrul legal privind drepturile consumatorilor în contractele încheiate cu profesioniștii (comercianții), transpunând în legislația românească normele europene în materie. Actul normativ reglementează în special contractele la distanță (inclusiv comerțul online) și cele încheiate în afara spațiilor comerciale, instituind obligații stricte de informare precontractuală și dreptul consumatorului de a se retrage din contract (retur fără invocarea unui motiv) în termen de 14 zile calendaristice. De asemenea, ordonanța stabilește reguli clare privind livrarea bunurilor, transferul riscului, comisioanele suplimentare ascunse și sancțiunile aplicabile comercianților care încalcă aceste prevederi.
+"""
+
+
+
+[[sources]]
+numar_link = 37075
+nume = "LEGE nr. 365 din 7 iunie 2002"
+slug = "comertul-electronic"
+descriere = """
+Stabilește cadrul juridic pentru furnizarea serviciilor societății informaționale și desfășurarea comerțului electronic în România, transpunând directiva europeană în domeniu. Actul normativ reglementează obligațiile de informare și transparență ale furnizorilor de servicii online, condițiile de validitate ale contractelor încheiate prin mijloace electronice, precum și regulile privind comunicările comerciale nesolicitate (spam). Totodată, legea definește regimul răspunderii furnizorilor de servicii intermediare (mere conduit, caching și hosting) pentru informațiile transmise sau stocate și stabilește sancțiunile aplicabile în cazul nerespectării acestor dispoziții.
+"""
+
+
+[[sources]]
+numar_link = 73657
+nume = "LEGEA nr. 307 din 12 iulie 2006"
+slug = "apararea-impotriva-incendiilor"
+descriere = """
+Stabilește cadrul juridic general pentru organizarea și desfășurarea activității de apărare împotriva incendiilor în România, având ca scop protejarea vieții oamenilor, a bunurilor și a mediului. Actul normativ reglementează obligațiile specifice ale autorităților publice, administratorilor de instituții și operatori economici, ale proiectanților, executanților, precum și ale cetățenilor privind prevenirea și intervenția în situații de urgență. Totodată, legea definește cadrul de funcționare al serviciilor de urgență (profesioniste, voluntare și private), procedurile de avizare și autorizare privind securitatea la incendiu, precum și sancțiunile contravenționale aplicabile în cazul încălcării normelor PSI.
+"""
+
+
+[[sources]]
+numar_link = 36778
+nume = "LEGE nr. 349 din 6 iunie 2002"
+slug = "interzicerea-fumatului"
+descriere = """
+Stabilește măsurile destinate prevenirii și combaterii consumului produselor din tutun în România, având ca scop protejarea sănătății populației și a nefumătorilor împotriva expunerii la fumul de tutun. Actul normativ reglementează interzicerea fumatului (inclusiv a țigaretelor electronice și a dispozitivelor de încălzire a tutunului) în toate spațiile publice închise, la locul de muncă, în mijloacele de transport în comun și în spațiile de joacă pentru copii, stabilind totodată condițiile de comercializare și etichetare a produselor din tutun, precum și interzicerea vânzării acestora către minori. De asemenea, legea prevede obligațiile de afișare și aplicare ale administratorilor de spații și instituie sancțiuni contravenționale (amenzi sau suspendarea activității) pentru nerespectarea dispozițiilor legale.
+"""
+
+
+[[sources]]
+numar_link = 101005
+nume = "ORDIN nr. 111 din 16 decembrie 2008"
+slug = "inregistrare-sanitara-veterinara-ansvsa"
+descriere = """
+Stabilește procedura oficială de înregistrare sanitară veterinară și pentru siguranța alimentelor pentru operatorii din sectorul alimentar care desfășoară activități de vânzare directă sau cu amănuntul (precum magazine alimentare, unități de alimentație publică, carmangerii, brutării sau unități de producție/depozitare a produselor de origine nonanimală). Actul normativ reglementează documentația necesară pentru obținerea documentului de înregistrare, condițiile de igienă și trasabilitate pe care unitățile trebuie să le respecte, precum și etapele de verificare efectuate de direcțiile sanitar-veterinare județene (DSVSA). Totodată, ordinul definește situațiile în care activitatea poate fi suspendată sau interzisă în cazul nerespectării normelor privind siguranța alimentelor.
+"""
+
+
+
+[[sources]]
+numar_link = 291583
+nume = "ORDONANȚĂ nr. 99 din 29 august 2000"
+slug = "comercializarea-produselor-serviciilor-piata"
+descriere = """
+Stabilește cadrul general privind desfășurarea activităților comerciale și a serviciilor de piață pe teritoriul României, având ca scop protejarea intereselor consumatorilor și asigurarea unei concurențe loiale. Actul normativ reglementează condițiile de exercitare a comerțului (autorizarea funcționării, orarele de funcționare, afișarea prețurilor), precum și regulile stricte aplicabile practicilor comerciale precum vânzările de lichidare, de soldare, promoționale, la distanță sau ambulante. De asemenea, ordonanța interzice vânzarea în pierdere (sub costul de achiziție, cu anumite excepții legale) și stabilește sancțiunile contravenționale aplicabile comercianților care încalcă aceste norme.
+"""
+
+
+[[sources]]
+numar_link = 40676
+nume = "LEGE nr. 650 din 7 decembrie 2002"
+slug = "comercializarea-produselor-piata"
+descriere = """
+Actul normativ prin care Parlamentul României a aprobat, cu modificări și completări esențiale, Ordonanța Guvernului nr. 99/2000 privind comercializarea produselor și serviciilor de piață. Pe lângă validarea cadrului general al activităților comerciale, legea a adus clarificări importante privind definițiile practicilor comerciale, condițiile de desfășurare a vânzărilor cu preț redus (soldări, lichidări, promoții) și regimul sancțiunilor aplicabile comercianților. În practică, dispozițiile sale au fost integrate ulterior în forma republicată a OG nr. 99/2000, rămânând însă un reper de referință în istoricul legislativ al comerțului din România.
+"""
+
+
+[[sources]]
+numar_link = 131203
+nume = "OUG nr. 27 din 31 august 2011 privind transporturile rutiere"
+slug = "transporturile-rutiere"
+descriere = """
+Stabilește cadrul general pentru organizarea și efectuarea transporturilor rutiere de mărfuri și persoane pe teritoriul României, precum și al activităților conexe acestora (precum autogările și intermedierea în transporturi). Actul normativ reglementează condițiile de acces la profesia de operator de transport rutier (licențierea, competența profesională, capacitatea financiară și buna reputație), regulile privind formarea și atestarea profesională a personalului (conducători auto, manageri de transport, consilieri de siguranță), precum și regimul transporturilor în cont propriu și contra cost. De asemenea, ordonanța definește atribuțiile autorităților de control (precum ISCTR și ARR) și stabilește sancțiunile contravenționale aplicabile în cazul încălcării normelor din domeniul transporturilor rutiere.
+"""
+
+
+[[sources]]
+numar_link = 219566
+nume = "LEGE nr. 204 din 7 noiembrie 2019"
+slug = "transport-alternativ-ridesharing"
+descriere = """
+Aprobă, cu modificări și completări, Ordonanța de Urgență nr. 49/2019, stabilind cadrul legal complet pentru desfășurarea activităților de transport alternativ (ridesharing, precum Uber sau Bolt) în România. Actul normativ reglementează obligațiile platformelor digitale de intermediere (inclusiv necesitatea avizului tehnic), condițiile de autorizare pentru operatorii de transport alternativ (PFA, II, IF sau SRL) și cerințele aplicabile autoturismelor și conducătorilor auto (atestat profesional, ecusoane, inspecție tehnică periodică la 6 luni). Totodată, legea stabilește regulile privind fiscalizarea curselor, emiterea bonurilor fiscale sau a facturilor electronice și sancțiunile contravenționale aplicabile în cazul nerespectării acestor prevederi.
+"""
+
+
+
+[[sources]]
+numar_link = 55794
+nume = "LEGE nr. 50 din 29 iulie 1991"
+slug = "autorizarea-lucrarilor-de-constructii"
+descriere = """
+Stabilește cadrul legal pentru autorizarea executării lucrărilor de construcții în România, impunând obținerea prealabilă a certificatului de urbanism și a autorizației de construire sau de desființare, cu respectarea documentațiilor de amenajare a teritoriului și de urbanism. Actul normativ reglementează categoriile de lucrări supuse autorizării, excepțiile în care intervențiile se pot face fără autorizație, competențele autorităților emitente (primării, consilii județene) și termenele de eliberare a avizelor și acordurilor. Totodată, legea definește disciplina în construcții, procedura de recepție la terminarea lucrărilor, regulile privind intrarea în legalitate și sancțiunile contravenționale sau penale aplicabile pentru executarea lucrărilor fără autorizație ori cu încălcarea acesteia.
+"""
+
+
+[[sources]]
+numar_link = 5729
+nume = "LEGEA nr. 10 din 18 ianuarie 1995"
+slug = "calitatea-in-constructii"
+descriere = """
+Instituie sistemul calității în construcții în România, având ca scop realizarea și exploatarea unor construcții de calitate corespunzătoare pentru protejarea vieții oamenilor, a bunurilor acestora, a societății și a mediului înconjurător. Actul normativ stabilește cerințele fundamentale aplicabile construcțiilor (rezistență mecanică și stabilitate, securitate la incendiu, igienă și sănătate, siguranță în exploatare, protecție împotriva zgomotului, economie de energie) și reglementează obligațiile și răspunderile tuturor factorilor implicați: investitori, proiectanți, verificatori de proiecte, executanți, diriginți de șantier, experți tehnici și proprietari. Totodată, legea definește componentele sistemului calității (reglementări tehnice, certificarea conformității, agrementul tehnic, recepția construcțiilor, urmărirea comportării în exploatare) și stabilește sancțiunile contravenționale și penale aplicabile în cazul încălcării normelor de calitate.
+"""
+
+
+
+[[sources]]
+numar_link = 307658
+nume = "LEGE nr. 209 din 8 noiembrie 2019"
+slug = "servicii-plata-psd2"
+descriere = """
+Transpune în legislația națională Directiva (UE) 2015/2366 (PSD2), stabilind cadrul juridic pentru autorizarea, supravegherea și funcționarea prestatorilor de servicii de plată (instituții de plată, furnizori de servicii de inițiere a plății și de informare cu privire la conturi) în România. Actul normativ reglementează transparența condițiilor și a cerințelor de informare aplicabile operațiunilor de plată, drepturile și obligațiile utilizatorilor și ale prestatorilor, precum și regulile stricte privind autentificarea strictă a clienților (SCA) și securitatea tranzacțiilor electronice. Totodată, legea definește regimul răspunderii în cazul operațiunilor de plată neautorizate sau executate incorect, rolul de supraveghere al Băncii Naționale a României (BNR) și sancțiunile aplicabile pentru încălcarea normelor financiare.
+"""
+
+
+[[sources]]
+numar_link = 84525
+nume = "ORDONANȚA nr. 37 din 7 august 2007"
+slug = "timpi-conducere-odihna-tahograf"
+descriere = """
+Stabilește cadrul național de aplicare și control al regulamentelor europene (în special Regulamentul CE nr. 561/2006) privind timpii de conducere, pauzele și perioadele de odihnă ale șoferilor profesioniști, precum și utilizarea tahografelor în transporturile rutiere. Actul normativ reglementează obligațiile operatorilor de transport și ale conducătorilor auto privind înregistrarea activității, descărcarea și păstrarea datelor din tahografele digitale și de pe cartelele tahografice, alături de derogările aplicabile anumitor tipuri de transporturi interne. De asemenea, ordonanța stabilește competențele de control ale inspectorilor (ISCTR, poliția rutieră) și clasifică contravențiile (de la minore la foarte grave) împreună cu sancțiunile și măsurile de imobilizare a vehiculelor în cazul încălcării acestor reguli.
+"""
+
+
+[[sources]]
+numar_link = 8601
+nume = "LEGE nr. 114 din 11 octombrie 1996"
+slug = "legea-locuintei"
+descriere = """
+Stabilește cadrul juridic general privind regimul de construire, administrare, exploatare și închiriere a locuințelor în România, având ca scop asigurarea condițiilor minime de locuit și a dezvoltării fondului locativ. Actul normativ definește categoriile de locuințe (locuințe sociale, de serviciu, de intervenție, de necesitate și de protocol), reglementează condițiile de atribuire a acestora și stabilește regulile aplicabile contractelor de închiriere (drepturile și obligațiile proprietarului și ale chiriașului). Totodată, legea instituie cerințele minimale privind suprafețele și dotările locuințelor și stabilește cadrul de sprijin financiar din partea statului pentru construcția și reabilitarea fondului de locuințe.
+"""
+
+
+[[sources]]
+numar_link = 309285
+nume = "CODUL CIVIL din 17 iulie 2009"
+slug = "codul-civil"
+descriere = """
+Reprezintă actul normativ fundamental care reglementează raporturile patrimoniale și nepatrimoniale dintre persoanele fizice și juridice în România, guvernate de principiul egalității juridice a părților. Actul acoperă domenii esențiale precum statutul persoanelor, dreptul familiei (căsătoria, divorțul, filiația), bunurile și drepturile reale (proprietatea, uzufructul, servituțile, ipotecile), moștenirile, precum și teoria generală a obligațiilor, contractelor civile și comerciale (vânzare, locațiune, mandat, antrepriză etc.) și răspunderea civilă delictuală. Totodată, Codul Civil stabilește regulile privind prescripția extinctivă, publicitatea imobiliară (cartea funciară) și dispozițiile de drept internațional privat.
+"""
+
+
+[[sources]]
+numar_link = 109855
+nume = "CODUL PENAL din 17 iulie 2009"
+slug = "codul-penal"
+descriere = """
+Reprezintă actul normativ fundamental al dreptului penal din România, stabilind faptele care constituie infracțiuni, condițiile răspunderii penale și pedepsele sau măsurile educative și de siguranță aplicabile persoanelor fizice și juridice. Structurat într-o parte generală (principii, aplicarea legii penale în timp și spațiu, formele infracțiunii, cauzele justificative și de neimputabilitate, individualizarea pedepselor) și o parte specială (infracțiuni contra persoanei, patrimoniului, autorității, înfăptuirii justiției, infracțiuni de corupție și de serviciu, falsuri etc.), codul asigură apărarea valorilor sociale fundamentale ale statului de drept. Totodată, actul normativ reglementează regimul prescripției răspunderii penale, reabilitarea și răspunderea penală a minorilor.
+"""
+
+
+[[sources]]
+numar_link = 140271
+nume = "CODUL DE PROCEDURĂ CIVILĂ din 1 iulie 2010"
+slug = "codul-de-procedura-civila"
+descriere = """
+Reprezintă actul normativ fundamental care stabilește regulile de desfășurare a procesului civil și de executare silită a hotărârilor judecătorești sau a altor titluri executorii în România. Actul reglementează competența instanțelor judecătorești, drepturile și obligațiile părților, etapele judecății în primă instanță (cererea de chemare în judecată, întâmpinarea, administrarea probelor, dezbaterile), căile de atac (apelul, recursul, contestația în anulare, revizuirea), precum și procedurile speciale (ordonanța președințială, ordonanța de plată, cererile cu valoare redusă, divorțul, partajul). Totodată, codul definește cadrul legal al arbitrajului și stabilește regulile procesului civil internațional.
+"""
+
+
+[[sources]]
+numar_link = 120611
+nume = "CODUL DE PROCEDURĂ PENALĂ din 1 iulie 2010"
+slug = "codul-de-procedura-penala"
+descriere = """
+Reprezintă actul normativ fundamental care stabilește regulile privind desfășurarea procesului penal în România, având ca scop constatarea la timp și în mod complet a faptelor care constituie infracțiuni, astfel încât nicio persoană nevinovată să nu fie trasă la răspundere penală, iar orice persoană care a săvârșit o infracțiune să fie pedepsită potrivit legii. Actul reglementează principiile procesului penal, competența organelor judiciare (organe de cercetare penală, procurori, judecători de drepturi și libertăți, judecători de cameră preliminară și instanțe de judecată), drepturile și obligațiile părților și ale subiecților procesuali principali, precum și regimul probelor și al măsurilor preventive (reținerea, controlul judiciar, arestul la domiciliu, arestarea preventivă). Totodată, codul detaliază fazele procesului penal (urmărirea penală, camera preliminară, judecata în primă instanță și în căile de atac ordinare sau extraordinare), procedurile speciale (acordul de recunoaștere a vinovăției, procedura în cazul infractorilor minori) și regulile privind punerea în executare a hotărârilor penale definitive.
+"""
