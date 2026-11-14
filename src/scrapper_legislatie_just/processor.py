@@ -25,7 +25,7 @@ from unidecode import unidecode
 
 from .config import resolve_data_dir, step_dir
 from .logger import log
-from .misc import extract_file_meta
+from .misc import extract_file_meta, strip_diacritics
 from .sources import Sursa, surse_legislatie_just
 
 # HTML classes used by legislatie.just.ro for the legal structure.
@@ -104,7 +104,7 @@ CROSS_ART_RE = re.compile(
 
 
 def clean_text(value: str) -> str:
-    return SPACE_RE.sub(" ", value.replace("\u00a0", " ")).strip()
+    return SPACE_RE.sub(" ", strip_diacritics(value).replace("\u00a0", " ")).strip()
 
 
 PRE_BORDER_CHARS = " │┌┐└┘├┤┬┴┼─-=+_|\t"
@@ -112,7 +112,7 @@ PRE_BORDER_CHARS = " │┌┐└┘├┤┬┴┼─-=+_|\t"
 
 def preformatted_text(element: Tag) -> str:
     """Text of a ``<pre>`` block, keeping line breaks and column alignment."""
-    lines = [line.rstrip() for line in element.get_text().splitlines()]
+    lines = [line.rstrip() for line in strip_diacritics(element.get_text()).splitlines()]
     out: list[str] = []
     for line in lines:
         if not line.strip() and (not out or not out[-1].strip()):

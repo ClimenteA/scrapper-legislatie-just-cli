@@ -1,10 +1,54 @@
 import hashlib
 import random
+import re
 import time
 from functools import wraps
 from pathlib import Path
 
 from bs4 import BeautifulSoup, Comment
+from unidecode import unidecode
+
+# Romanian letters with diacritics, including the old cedilla variants that
+# still appear in legislation.just.ro (ş/ţ) next to the comma-below ones.
+_DIACRITICS = str.maketrans(
+    {
+        "ă": "a",
+        "Ă": "A",
+        "â": "a",
+        "Â": "A",
+        "î": "i",
+        "Î": "I",
+        "ș": "s",
+        "Ș": "S",
+        "ț": "t",
+        "Ț": "T",
+        "ş": "s",
+        "Ş": "S",
+        "ţ": "t",
+        "Ţ": "T",
+    }
+)
+
+
+_NON_ASCII = re.compile(r"[^\x00-\x7f]")
+
+
+def _transliterate(match: re.Match[str]) -> str:
+    char = match.group(0)
+    return unidecode(char) if char.isalpha() else char
+
+
+def strip_diacritics(value: str) -> str:
+    """Fold accented letters to plain ASCII, without touching layout.
+
+    Romanian diacritics are replaced explicitly so box-drawing characters in
+    the ASCII tables, quotes and dashes stay intact. Any other accented letter
+    that survives is transliterated with ``unidecode``.
+    """
+    text = str(value).translate(_DIACRITICS)
+    if text.isascii():
+        return text
+    return _NON_ASCII.sub(_transliterate, text)
 
 
 def jitter_call(low: float = 1, high: float = 3):

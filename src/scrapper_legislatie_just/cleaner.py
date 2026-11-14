@@ -11,7 +11,7 @@ from bs4 import BeautifulSoup, NavigableString, Tag
 
 from .config import resolve_data_dir, step_dir
 from .logger import log
-from .misc import extract_file_meta
+from .misc import extract_file_meta, strip_diacritics
 from .ocr import extract_table_from_image_base64
 from .sources import Sursa, surse_legislatie_just
 
@@ -1529,13 +1529,13 @@ class LegislatieJustCleaner:
             # 2. Check if we already processed this exact image
             if cache_file.exists():
                 log.debug(f"Found cache for image {img_hash[:8]}...")
-                ocr_text = cache_file.read_text(encoding="utf-8")
+                ocr_text = strip_diacritics(cache_file.read_text(encoding="utf-8"))
             else:
                 log.debug(
                     f"No cache for current file. Running OCR for {img_hash[:8]}..."
                 )
                 # 3. Extract the OCR text dynamically based on the source type
-                ocr_text = extract_table_from_image_base64(src)
+                ocr_text = strip_diacritics(extract_table_from_image_base64(src))
 
                 # 4. Save to cache atomically (Thread/Process safe)
                 if ocr_text:
@@ -1755,7 +1755,7 @@ class LegislatieJustCleaner:
 
             log.info(f"[{index}/{len(candidates)}] Curat: {html_path.name}")
 
-            html_text = html_path.read_text(encoding="utf-8")
+            html_text = strip_diacritics(html_path.read_text(encoding="utf-8"))
             html_text = re.sub(r"<!---->", "", html_text)
 
             soup = BeautifulSoup(html_text, "html5lib")

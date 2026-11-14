@@ -18,6 +18,7 @@ import json
 import sys
 from typing import Any
 
+from .misc import strip_diacritics
 from .query import LegalIndex
 
 PROTOCOL_VERSION = "2024-11-05"
@@ -405,6 +406,21 @@ def _format_docs(rows: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def _sanitize_arguments(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Strip diacritics from the user's free-text input.
+
+    The index and the corpus are ASCII, so a question typed with Romanian
+    diacritics must be folded before it reaches search/context, before it is
+    written to the answer file, and before the answer is saved.
+    """
+    cleaned = dict(arguments)
+    for key in ("query", "question", "answer"):
+        value = cleaned.get(key)
+        if isinstance(value, str):
+            cleaned[key] = strip_diacritics(value)
+    return cleaned
+
+
 def _call_tool(name: str, arguments: dict[str, Any]) -> str:
     # Currency conversion only needs the BNR cache, not the legal index.
     if name == "convert_currency":
@@ -569,7 +585,7 @@ def handle(message: dict[str, Any]) -> dict[str, Any] | None:
         name = params.get("name")
         arguments = params.get("arguments") or {}
         try:
-            text = _call_tool(name, arguments)
+            text = strip_diacritics(_call_tool(name, _sanitize_arguments(arguments)))
         except Exception as ex:  # noqa: BLE001 - surfaced to the client
             return _response(
                 request_id,

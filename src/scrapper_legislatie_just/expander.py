@@ -6,7 +6,7 @@ from pathlib import Path
 
 from .config import resolve_data_dir, step_dir
 from .logger import log
-from .misc import extract_file_meta
+from .misc import extract_file_meta, strip_diacritics
 from .sources import Sursa, SursaConsolidata, SurseConsolidate, surse_legislatie_just
 
 
@@ -177,7 +177,7 @@ class LegislatieJustExpander:
             )
 
             try:
-                html_content = html_path.read_text()
+                html_content = strip_diacritics(html_path.read_text(encoding="utf-8"))
                 result = converter.convert_string(
                     html_content, format=InputFormat.HTML, name=html_path.name
                 )
