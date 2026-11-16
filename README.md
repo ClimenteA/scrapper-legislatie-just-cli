@@ -62,18 +62,29 @@ Upgrade by running the installer again, or `uv tool upgrade
 scrapper-legislatie-just-cli`. To remove everything, see
 [Uninstall](#uninstall).
 
-The OCR stack (`docling`, `easyocr`) and the Cypher graph (`graphqlite`) are
-installed by default, because `download`, `expand` and `cypher` need them. The
-first install downloads a few hundred MB and takes several minutes; later runs
-are cached.
+The Cypher graph (`graphqlite`) is installed by default. The OCR stack
+(`docling`, `easyocr`) is an optional `ocr` extra: the one-line installer and
+source checkouts below include it, because `read_context` and OCR during
+`download`/`expand` need it. The first install downloads several hundred MB
+(together with torch) and takes a few minutes; later runs are cached. The
+hosted FastAPI **web** image intentionally **omits** this extra (the separate
+indexer image needs it) — see
+[Hosted (cloud) MCP with FastAPI](#hosted-cloud-mcp-with-fastapi).
 
 #### From source (development)
+
+Python **3.12** is the supported version (`requires-python = ">=3.12,<3.13"`
+and the `.python-version` file). The Docker images also use Python 3.12.
 
 ```bash
 git clone https://github.com/ClimenteA/scrapper-legislatie-just-cli.git
 cd scrapper-legislatie-just-cli
-uv sync
+uv sync --extra ocr
 ```
+
+Without `--extra ocr` the CLI and the full local MCP still work (including
+`--no-ocr` runs); only PDF/image reading and OCR-enabled downloads need the
+extra.
 
 Every command in this README is written with the `uv run` prefix from the
 checkout. If you installed with the one-liner, just drop `uv run` and call
@@ -146,8 +157,8 @@ uv run scrapper-legislatie-just-cli context-files
 uv run scrapper-legislatie-just-cli read-context factura.pdf
 ```
 
-`read-context` uses the Docling/EasyOCR stack already installed for the legal
-pipeline. It accepts PDF, PNG, JPG/JPEG, WEBP, TIFF/TIF, BMP and GIF. The first
+`read-context` uses the Docling/EasyOCR stack from the optional `ocr` extra
+(included by the installer and `uv sync --extra ocr`). It accepts PDF, PNG, JPG/JPEG, WEBP, TIFF/TIF, BMP and GIF. The first
 conversion may download the Docling/EasyOCR models; later conversions use the
 local cache. The Markdown extraction is cached in `date-context/.converted/`,
 so the second read is instant. By default it exports every Docling content
@@ -220,6 +231,10 @@ act. If the content is unchanged, the new file is discarded instead of adding
 a duplicate.
 
 ## Using it with an AI assistant
+
+The steps below describe the **local stdio** mode. If you want to host the MCP
+over HTTP for users who only have OpenCode, see
+[Two ways to use the MCP server](#two-ways-to-use-the-mcp-server) below.
 
 After `process`, the folder `legislatie-descarcata/4-processed/` contains the
 index and a generated `AGENTS.md` with the answering rules: search the index
@@ -303,7 +318,7 @@ or the HTML files.
 #### OpenCode
 
 This repository already ships a working `opencode.json`, so when you open the
-repository root in OpenCode the tools are available after `uv sync`. To set it
+repository root in OpenCode the tools are available after `uv sync --extra ocr`. To set it
 up by hand, or to use it from another project:
 
 ```jsonc
@@ -568,6 +583,171 @@ rates. Close and reopen OpenCode, then check `/mcps` again. The rules in
 `AGENTS.md` tell the assistant to use `legislatie_convert_currency` first and to
 fall back to a shell or web request only when the MCP tool is missing or
 failing, saying so explicitly in the answer.
+
+## Two ways to use the MCP server
+
+This repository supports **two independent modes** with the same legal index:
+
+| | Local (stdio) | Hosted (FastAPI / Streamable HTTP) |
+|---|---|---|
+| Who runs it | You, from this checkout | A server you deploy with Docker |
+| Client setup | OpenCode starts `mcp_server.py` | OpenCode connects to a URL + token |
+| Tools | All 13 tools | 8 read-only tools (see below) |
+| Personal files | `date-context/`, `raspunsuri-ai/` on your PC | **None** — no user data on the server |
+| Result links | `file:///.../3-expanded/...#anchor` | `https://mcp.chatcodfiscal.ro/laws/3-expanded/...#anchor` |
+| Instructions file | `AGENTS.md` | `AGENTS-cloud.md` |
+
+The local mode is documented above and works exactly as before: `file://`
+links, the fiscal-context questionnaire, PDF reading and `save_answer` all stay
+on your machine. Nothing in this section changes it.
+
+## Hosted (cloud) MCP with FastAPI
+
+The hosted server exposes only **stateless, read-only tools**: `search`,
+`article`, `show`, `neighbors`, `context`, `docs`, `cypher` and
+`convert_currency` (BNR rates). Personal-file tools (`context_files`,
+`read_context`, `get_user_tax_context`, `save_user_tax_context`, `save_answer`)
+are deliberately **not** available here. The server never creates
+`date-context/` or `raspunsuri-ai/` and stores no documents, answers or fiscal
+profiles. Because the web app never reads PDFs, its image installs only the
+base dependencies (no optional `ocr` extra) and stays around **220 MB**. The
+separate indexer image **does** install the `ocr` extra, because the monthly
+reindex runs OCR on base64 images embedded in the downloaded HTML.
+
+Links returned by the hosted tools are HTTPS URLs. Caddy serves only the
+`3-expanded/` folder read-only at `/laws/*`, so `law.db` and `graph.db` are
+never publicly downloadable. The generated `AGENTS-cloud.md` contains the same
+answering rules as `AGENTS.md`, minus the tool calls that do not exist in this
+mode.
+
+### 1. Configuration
+
+Copy `.env.example` to `.env` and set at least these two values:
+
+```bash
+ADMIN_SECRET_KEY=the-admin-secret-key-change-it
+TOKEN_SIGNING_SECRET=<long-random-value>   # python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+`ADMIN_SECRET_KEY` is a plain string: the `admin_secret_key` you send when
+issuing a token must be exactly that value. `TOKEN_SIGNING_SECRET` signs the
+issued JWTs; **rotating it revokes every token at once**. Neither value is
+written to disk by the app — they are read from the environment at request
+time.
+
+Other supported variables:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `SCRAPPER_DATA_DIR` | `<cwd>/legislatie-descarcata` | Data root (`law.db`, `graph.db`, `3-expanded`) |
+| `PUBLIC_LAWS_BASE_URL` | `https://mcp.chatcodfiscal.ro/laws` | Prefix for public result links |
+| `MCP_ALLOWED_HOSTS` | `mcp.chatcodfiscal.ro`, `localhost`, `127.0.0.1` (+ `:port` variants) | MCP DNS-rebinding allowlist |
+| `MCP_DISABLE_DNS_REBINDING` | `0` | Set `1` only when a trusted proxy owns the `Host` header |
+| `WEB_WORKERS` | `2` | uvicorn worker processes |
+| `WEB_HOST` / `WEB_PORT` | `0.0.0.0` / `8000` | Bind address |
+| `REINDEX_ON_START` | `0` | `1` builds the index on the indexer's first start |
+| `REINDEX_OCR` | `1` | OCR of base64 images during reindex (indexer only) |
+| `TZ` | `Europe/Bucharest` | Container timezone |
+
+### 2. Run with Docker
+
+The provided `docker-compose.yml` starts three services: `caddy-proxy`,
+`chatcodfiscal-app` (the FastAPI + MCP app, built without the OCR extra) and
+`chatcodfiscal-indexer` (one scheduler process, built with `INSTALL_OCR=1`).
+`caddy-proxy` bind-mounts only `./legislatie-descarcata/3-expanded` (read-only)
+at `/data/legislatie-descarcata/3-expanded`, so `law.db` and `graph.db` are never
+exposed by the public web server. `chatcodfiscal-app` and
+`chatcodfiscal-indexer` bind-mount the whole `./legislatie-descarcata` at
+`/data/legislatie-descarcata`, so the index is visible both in the containers
+and on the host.
+
+```bash
+cp .env.example .env
+# edit .env, then build the index on the first launch:
+REINDEX_ON_START=1 docker compose up -d --build
+# afterwards set REINDEX_ON_START=0 and restart if needed
+```
+
+The `Caddyfile` routes `mcp.chatcodfiscal.ro` as follows:
+
+- `/laws/*` → read-only `3-expanded/` HTML;
+- `/static/*` → optional static files;
+- everything else (including `/mcp`, `/admin/*`, `/health`, `/docs`) → the
+  FastAPI app on port 8000.
+
+The OpenAPI UI is at `https://mcp.chatcodfiscal.ro/docs`; `/health` reports
+whether `law.db` and `graph.db` exist.
+
+### 3. Issue a token
+
+Use the admin endpoint (also available in the OpenAPI docs):
+
+```bash
+curl -X POST https://mcp.chatcodfiscal.ro/admin/tokens \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "user_email": "user@example.com",
+    "token_expire_date": "2027-01-01T23:59:59+02:00",
+    "admin_secret_key": "the-admin-secret-key-change-it"
+  }'
+```
+
+`token_expire_date` is ISO 8601. Times without an offset are interpreted as
+**Europe/Bucharest** local time; `Z` and explicit offsets are respected; past
+dates are rejected with `422`. The response contains the signed token — it is
+returned once and is not stored anywhere. Expiry and signature are verified on
+every request; invalid tokens get `401`.
+
+### 4. Connect OpenCode
+
+Give the user this configuration (they only need OpenCode — no repository or
+Python install):
+
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "instructions": ["AGENTS-cloud.md"],
+  "mcp": {
+    "servers": {
+      "legislatie": {
+        "type": "remote",
+        "url": "https://mcp.chatcodfiscal.ro/mcp",
+        "oauth": false,
+        "codemode": false,
+        "headers": { "Authorization": "Bearer {env:MCP_API_KEY}" }
+      }
+    }
+  }
+}
+```
+
+Set `MCP_API_KEY` to the token from step 3. `codemode: false` keeps the native
+`legislatie_*` tool names used by `AGENTS-cloud.md`. Copy `AGENTS-cloud.md`
+next to OpenCode (it is regenerated into `4-processed/` by `process`).
+
+### 5. Reindexing
+
+The indexer container runs APScheduler with a cron trigger for the **15th of
+each month at 03:00 Europe/Bucharest**, using the same pipeline as
+`run-all`. It runs in its own container so web workers never block, and a file
+lock prevents overlapping runs. `law.db` and `graph.db` are written to temporary
+files and published with `os.replace`, so readers always see a complete index.
+
+For a manual rebuild, call (admin only):
+
+```bash
+curl -X POST https://mcp.chatcodfiscal.ro/admin/reindex \
+  -H 'Content-Type: application/json' \
+  -d '{"admin_secret_key": "the-admin-secret-key-change-it", "force": false}'
+```
+
+### 6. Local mode stays unchanged
+
+To keep using the full local toolset, configure the stdio server as described
+in [Using it with an AI assistant](#using-it-with-an-ai-assistant). It still
+uses `AGENTS.md`, `file://` links, and local `date-context/` / `raspunsuri-ai/`
+folders. Both modes can read the same index; only the hosted one imposes the
+stateless, read-only subset.
 
 ## Persistent fiscal context
 

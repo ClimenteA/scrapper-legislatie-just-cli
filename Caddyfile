@@ -1,0 +1,20 @@
+mcp.chatcodfiscal.ro {
+
+    # Public read-only HTML served by the tools as https links.
+    # Only 3-expanded is mounted into Caddy — law.db / graph.db are never public.
+    handle_path /laws/* {
+        root * /data/legislatie-descarcata/3-expanded
+        file_server
+    }
+
+    # Keep the existing static files mount if the app serves any.
+    handle_path /static/* {
+        root * /webapp/staticfiles
+        file_server
+    }
+
+    # Everything else (including /mcp and /admin/*) goes to FastAPI.
+    handle {
+        reverse_proxy chatcodfiscal-app:8000
+    }
+}

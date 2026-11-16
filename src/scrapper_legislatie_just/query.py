@@ -81,8 +81,10 @@ class LegalIndex:
         self,
         data_dir: str | Path | None = None,
         db_path: str | Path | None = None,
+        public_base_url: str | None = None,
     ) -> None:
         self.root = resolve_data_dir(data_dir)
+        self.public_base_url = public_base_url
         self.db_path = (
             Path(db_path).expanduser().resolve()
             if db_path
@@ -102,12 +104,19 @@ class LegalIndex:
     def close(self) -> None:
         self.connection.close()
 
+    def __enter__(self) -> LegalIndex:
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self.close()
+
     # ----------------------------------------------------------------- helpers
     def link(self, row: sqlite3.Row | dict[str, Any]) -> str:
-        html_rel = row["html_rel"]
-        anchor = row["anchor"]
-        uri = (self.root / html_rel).resolve().as_uri()
-        return f"{uri}#{anchor}" if anchor else uri
+        from .links import make_link
+
+        return make_link(
+            self.root, row["html_rel"], row["anchor"], self.public_base_url
+        )
 
     @staticmethod
     def _row_text(row: sqlite3.Row) -> str:
@@ -350,8 +359,14 @@ class LegalIndex:
             article_label = row["article_label"]
             article_link = None
             if row["article_anchor"]:
-                uri = (self.root / row["html_rel"]).resolve().as_uri()
-                article_link = f"{uri}#{row['article_anchor']}"
+                from .links import make_link
+
+                article_link = make_link(
+                    self.root,
+                    row["html_rel"],
+                    row["article_anchor"],
+                    self.public_base_url,
+                )
             link = self.link(row)
             if "#" not in link:
                 # A document-level note has no HTML anchor. Fall back to the
@@ -642,7 +657,9 @@ class LegalIndex:
                 f"{target}.anchor AS anchor, {target}.link AS link"
             )
             try:
-                return run_cypher(self.graph_path, cypher)
+                return run_cypher(
+                    self.graph_path, cypher, base_url=self.public_base_url
+                )
             except FileNotFoundError as ex:
                 raise FileNotFoundError(
                     f"Citation graph not found: {self.graph_path}. Run "

@@ -21,6 +21,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from .links import make_link, publicize_rows
 from .logger import log
 
 LABELS = {
@@ -55,12 +56,13 @@ def _import_graphqlite():
     return graphqlite
 
 
-def _link(root: Path, html_rel: str, anchor: str | None) -> str:
-    path = Path(html_rel)
-    if not path.is_absolute():
-        path = root / path
-    uri = path.resolve().as_uri()
-    return f"{uri}#{anchor}" if anchor else uri
+def _link(
+    root: Path,
+    html_rel: str,
+    anchor: str | None,
+    base_url: str | None = None,
+) -> str:
+    return make_link(root, html_rel, anchor, base_url)
 
 
 def _article_edges(
@@ -206,7 +208,11 @@ def build_graph(
         graph.close()
 
 
-def run_cypher(graph_path: str | Path, query: str) -> list[dict[str, Any]]:
+def run_cypher(
+    graph_path: str | Path,
+    query: str,
+    base_url: str | None = None,
+) -> list[dict[str, Any]]:
     graphqlite = _import_graphqlite()
     graph_path = Path(graph_path).expanduser().resolve()
     if not graph_path.exists():
@@ -216,9 +222,10 @@ def run_cypher(graph_path: str | Path, query: str) -> list[dict[str, Any]]:
         )
     graph = graphqlite.Graph(str(graph_path))
     try:
-        return graph.query(query)
+        rows = graph.query(query)
     finally:
         graph.close()
+    return publicize_rows(rows, base_url) if base_url else rows
 
 
 def cypher_literal(value: str) -> str:

@@ -306,20 +306,24 @@ class LegalIndexBuilder:
         connection.commit()
         connection.close()
 
-        if self.db_path.exists():
-            self.db_path.unlink()
-        tmp_db.replace(self.db_path)
-
         from .graph import build_graph
 
         log.info("Construiesc graful de citari dintre articole...")
+        tmp_graph = self.processed_dir / "graph.db.tmp"
+        if tmp_graph.exists():
+            tmp_graph.unlink()
         graph_result = build_graph(
             nodes=self._graph_nodes(all_nodes, all_docs),
             refs=all_refs,
             root=self.root,
-            graph_path=self.graph_path,
+            graph_path=tmp_graph,
             force=True,
         )
+
+        # Publish both databases in one step so a hosted worker never sees a
+        # half-rebuilt index (os.replace is atomic on the same filesystem).
+        tmp_db.replace(self.db_path)
+        tmp_graph.replace(self.graph_path)
         refs = len(all_refs)
 
         elapsed = round(time.perf_counter() - started, 2)
@@ -944,7 +948,7 @@ class LegalIndexBuilder:
 
     def _write_instructions(self) -> None:
         template_dir = Path(__file__).with_name("templates")
-        for name in ("AGENTS.md", "answer-format.md"):
+        for name in ("AGENTS.md", "AGENTS-cloud.md", "answer-format.md"):
             source = template_dir / name
             if not source.exists():
                 continue
