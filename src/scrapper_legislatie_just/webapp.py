@@ -14,8 +14,9 @@ no user data on disk. Local users keep using the stdio server from
 
 from __future__ import annotations
 
-from collections.abc import Any, AsyncGenerator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from typing import Any
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request, Response

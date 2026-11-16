@@ -654,7 +654,12 @@ Other supported variables:
 The provided `docker-compose.yml` starts three services: `caddy-proxy`,
 `chatcodfiscal-app` (the FastAPI + MCP app, built without the OCR extra) and
 `chatcodfiscal-indexer` (one scheduler process, built with `INSTALL_OCR=1`).
-All share the `legislatie_data` volume.
+`caddy-proxy` bind-mounts only `./legislatie-descarcata/3-expanded` (read-only)
+at `/data/legislatie-descarcata/3-expanded`, so `law.db` and `graph.db` are never
+exposed by the public web server. `chatcodfiscal-app` and
+`chatcodfiscal-indexer` bind-mount the whole `./legislatie-descarcata` at
+`/data/legislatie-descarcata`, so the index is visible both in the containers
+and on the host.
 
 ```bash
 cp .env.example .env
