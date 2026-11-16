@@ -134,6 +134,8 @@ build_spec() {
             fi
             ;;
     esac
+    # Local installs keep the PDF/OCR tools; the hosted Docker image omits it.
+    spec="${spec}[ocr]"
 }
 
 is_installed() {

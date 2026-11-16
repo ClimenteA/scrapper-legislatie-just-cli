@@ -109,6 +109,8 @@ if ($spec -match '^git\+') {
 if ($spec -like 'git+*') {
     if ($Ref) { $spec = "$spec@$Ref" }
 }
+# Local installs keep the PDF/OCR tools; the hosted Docker image omits it.
+$spec = "$spec[ocr]"
 
 if (($spec -like 'git+*') -and -not (Get-Command git -ErrorAction SilentlyContinue)) {
     throw 'git is required to install from a repository. Install Git for Windows and run this script again.'

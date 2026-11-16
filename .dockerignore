@@ -1,0 +1,13 @@
+.git
+.venv
+.pytest_cache
+__pycache__
+*.pyc
+legislatie-descarcata
+legislatie-descarcata.zip
+date-context
+raspunsuri-ai
+tests
+webapp
+.env
+*.log
