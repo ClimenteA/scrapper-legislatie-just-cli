@@ -19,6 +19,20 @@ from .config import resolve_data_dir, step_dir
 
 SPACE_RE = re.compile(r"\s+")
 
+
+class NotFoundError(KeyError):
+    """A requested article or node is absent from the index.
+
+    This is an anticipated lookup miss (typically a bad identifier supplied by
+    an MCP client), not a bug. It subclasses :class:`KeyError` so the CLI's
+    existing ``except KeyError`` handling keeps working, but ``str()`` returns
+    the plain message instead of KeyError's quoted repr.
+    """
+
+    def __str__(self) -> str:
+        return str(self.args[0]) if self.args else "Not found"
+
+
 # Very small Romanian stop-word list: they would match almost every node and
 # only add noise to BM25 / coverage scores.
 STOPWORDS = {
@@ -128,6 +142,66 @@ class LegalIndex:
             (slug,),
         ).fetchone()
         return row["title"] if row else slug
+
+    def suggest_articles(
+        self, doc: str, number: str, version: str | None = None, limit: int = 5
+    ) -> list[str]:
+        """Article numbers in ``doc`` closest to ``number`` (as a hint)."""
+        def leading_int(value: str) -> int:
+            match = re.match(r"\d+", value)
+            return int(match.group()) if match else 0
+
+        rows = self.connection.execute(
+            """
+            SELECT DISTINCT n.number FROM nodes n
+            JOIN docs d ON d.slug = n.doc_slug AND d.version = n.doc_version
+            WHERE n.doc_slug = ? AND n.kind = 'articol' AND n.number IS NOT NULL
+              AND (? IS NULL OR n.doc_version = ?)
+            ORDER BY d.is_latest DESC, d.version DESC
+            """,
+            (doc, version, version),
+        ).fetchall()
+        target = leading_int(str(number))
+        numbers = {row["number"] for row in rows}
+        return sorted(
+            numbers,
+            key=lambda value: (abs(leading_int(value) - target), value),
+        )[:limit]
+
+    def resolve_node_id(self, node_id: str) -> str:
+        """Accept a full ``slug@version#anchor`` id or a bare ``#anchor``.
+
+        MCP clients often copy the bare anchor from a ``SURSA:`` link. Anchors
+        are not unique across acts, so when several nodes share one we raise a
+        :class:`NotFoundError` listing the full ids instead of guessing.
+        """
+        if self.connection.execute(
+            "SELECT 1 FROM nodes WHERE id = ?", (node_id,)
+        ).fetchone():
+            return node_id
+        if "@" in node_id:
+            return node_id  # a full id that simply isn't in the index
+
+        anchor = node_id.lstrip("#")
+        rows = self.connection.execute(
+            """
+            SELECT n.id FROM nodes n
+            JOIN docs d ON d.slug = n.doc_slug AND d.version = n.doc_version
+            WHERE n.anchor = ?
+            ORDER BY d.is_latest DESC, d.version DESC
+            """,
+            (anchor,),
+        ).fetchall()
+        ids = list(dict.fromkeys(row["id"] for row in rows))
+        if not ids:
+            return node_id
+        if len(ids) == 1:
+            return ids[0]
+        candidates = ", ".join(ids[:5])
+        raise NotFoundError(
+            f"ID-ul {node_id} este ambiguu (ancora folosita in mai multe acte). "
+            f"Foloseste un ID complet, ex: {candidates}."
+        )
 
     # ------------------------------------------------------------------ search
     def search(
@@ -413,7 +487,10 @@ class LegalIndex:
             (node_id,),
         ).fetchone()
         if node is None:
-            raise KeyError(f"Unknown node: {node_id}")
+            raise NotFoundError(
+                f"Nodul {node_id} nu exista in index. "
+                "Foloseste search sau context pentru a obtine ID-uri valide."
+            )
 
         rows = self.connection.execute(
             """
@@ -516,7 +593,12 @@ class LegalIndex:
         for hit in hits:
             if version is None or hit["version"] == version:
                 return self.window(hit["id"])
-        raise KeyError(f"Article {number} not found in {doc}")
+        near = self.suggest_articles(doc, str(number), version)
+        hint = f" Articole disponibile in apropiere: {', '.join(near)}." if near else ""
+        raise NotFoundError(
+            f"Articolul {number} nu exista in {doc}.{hint} "
+            "Foloseste search sau docs pentru valori valide."
+        )
 
     def window(
         self, node_id: str, before: int = 1, after: int = 1
@@ -532,7 +614,10 @@ class LegalIndex:
             (node_id,),
         ).fetchone()
         if node is None:
-            raise KeyError(f"Unknown node: {node_id}")
+            raise NotFoundError(
+                f"Nodul {node_id} nu exista in index. "
+                "Foloseste search sau context pentru a obtine ID-uri valide."
+            )
 
         rows = self.connection.execute(
             """
@@ -585,6 +670,7 @@ class LegalIndex:
         }
 
     def show(self, node_id: str) -> dict[str, Any]:
+        node_id = self.resolve_node_id(node_id)
         data = self.content(node_id)
         ancestors: list[dict[str, str]] = []
         parent = self.connection.execute(
@@ -626,11 +712,15 @@ class LegalIndex:
         """Read incoming/outgoing citations from ``graph.db`` (GraphQLite)."""
         from .graph import cypher_literal, run_cypher
 
+        node_id = self.resolve_node_id(node_id)
         row = self.connection.execute(
             "SELECT article_id FROM nodes WHERE id = ?", (node_id,)
         ).fetchone()
         if row is None:
-            raise KeyError(f"Unknown node: {node_id}")
+            raise NotFoundError(
+                f"Nodul {node_id} nu exista in index. "
+                "Foloseste search sau context pentru a obtine ID-uri valide."
+            )
         article_id = row["article_id"] or node_id
         node_lit = cypher_literal(node_id)
         article_lit = cypher_literal(article_id)

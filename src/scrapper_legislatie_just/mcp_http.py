@@ -13,14 +13,18 @@ monthly reindex job.
 from __future__ import annotations
 
 import json
+from functools import wraps
+from typing import Any, Callable
 
 from mcp.server import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 
 from .config import resolve_data_dir, step_dir
 from .graph import run_cypher
+from .logger import log
 from .mcp_server import _format_article, _format_docs, _format_neighbors
 from .misc import strip_diacritics
-from .query import LegalIndex
+from .query import LegalIndex, NotFoundError
 from .settings import get_settings
 
 SERVER_NAME = "legislatie"
@@ -33,6 +37,30 @@ def public_base_url() -> str:
 
 def _index() -> LegalIndex:
     return LegalIndex(public_base_url=public_base_url())
+
+
+def _anticipated_failure(fn: Callable[..., str]) -> Callable[..., str]:
+    """Report index lookup misses as anticipated MCP tool failures.
+
+    Clients occasionally ask for an article/node that does not exist (e.g. a
+    hallucinated article number). A bare exception makes the SDK log a full
+    ERROR traceback and hide the message from the model. ``ToolError`` is the
+    SDK's deliberate-failure channel: the model gets our message with
+    ``is_error=True`` and the SDK logs one quiet INFO line. We also emit a
+    concise WARNING so operators still see the failed lookup without a
+    traceback.
+    """
+
+    @wraps(fn)
+    def wrapper(*args: Any, **kwargs: Any) -> str:
+        try:
+            return fn(*args, **kwargs)
+        except NotFoundError as ex:
+            message = str(ex)
+            log.warning("MCP tool '{}': {}", fn.__name__, message)
+            raise ToolError(message) from None
+
+    return wrapper
 
 
 mcp = MCPServer(
@@ -66,6 +94,7 @@ def search(
 
 
 @mcp.tool()
+@_anticipated_failure
 def article(doc: str, number: str, version: str | None = None) -> str:
     """Intoarce un articol intreg (alineate, litere, note) cu link catre ancora lui. Pentru acte fara articole intoarce codul si descrierea din jur."""
     with _index() as index:
@@ -74,6 +103,7 @@ def article(doc: str, number: str, version: str | None = None) -> str:
 
 
 @mcp.tool()
+@_anticipated_failure
 def show(node_id: str) -> str:
     """Arata un nod dupa id exact, cu parintii si trimiterile lui."""
     with _index() as index:
@@ -81,6 +111,7 @@ def show(node_id: str) -> str:
 
 
 @mcp.tool()
+@_anticipated_failure
 def neighbors(node_id: str, subtree: bool = False) -> str:
     """Trimiterile care pleaca din nod si cele care intra in nod. subtree=True include tot articolul."""
     with _index() as index:
