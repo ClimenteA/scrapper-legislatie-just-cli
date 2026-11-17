@@ -590,3 +590,23 @@ slug = "codul-de-procedura-penala"
 descriere = """
 Reprezintă actul normativ fundamental care stabilește regulile privind desfășurarea procesului penal în România, având ca scop constatarea la timp și în mod complet a faptelor care constituie infracțiuni, astfel încât nicio persoană nevinovată să nu fie trasă la răspundere penală, iar orice persoană care a săvârșit o infracțiune să fie pedepsită potrivit legii. Actul reglementează principiile procesului penal, competența organelor judiciare (organe de cercetare penală, procurori, judecători de drepturi și libertăți, judecători de cameră preliminară și instanțe de judecată), drepturile și obligațiile părților și ale subiecților procesuali principali, precum și regimul probelor și al măsurilor preventive (reținerea, controlul judiciar, arestul la domiciliu, arestarea preventivă). Totodată, codul detaliază fazele procesului penal (urmărirea penală, camera preliminară, judecata în primă instanță și în căile de atac ordinare sau extraordinare), procedurile speciale (acordul de recunoaștere a vinovăției, procedura în cazul infractorilor minori) și regulile privind punerea în executare a hotărârilor penale definitive.
 """
+
+
+[[sources]]
+numar_link = 202623
+nume = "Legea nr. 165/2018 privind acordarea biletelor de valoare"
+slug = "lege-tichete-de-masa-bonuri"
+descriere = """
+Reglementează regimul fiscal și contribuțiile sociale pentru tichetele de masă, tichetele cadou, de creșă sau vacanță.
+"""
+
+
+[[sources]]
+numar_link = 314229
+nume = "NORME METODOLOGICE din 28 decembrie 2018 de aplicare a Legii nr. 165/2018 privind acordarea biletelor de valoare"
+slug = "norme-de-aplicare-lege-tichete-de-masa-bonuri"
+descriere = """
+Stabilesc procedurile concrete prin care angajatorii pot acorda salariaților bilete de valoare (tichete de masă, cadou, de creșă, culturale și vouchere de vacanță), inclusiv regulile de contractare cu unitățile emitente și condițiile de autorizare ale acestora.
+De asemenea, actul detaliază modul de calcul al numărului de tichete cuvenite în funcție de zilele lucrate, obligațiile de evidență contabilă și fiscală a biletelor emise pe suport electronic, precum și regulile de utilizare sau decontare între emitenți și unitățile afiliate (comercianți).
+"""
+

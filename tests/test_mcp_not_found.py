@@ -15,8 +15,8 @@ import pytest
 from loguru import logger
 from mcp.server.mcpserver.exceptions import ToolError, UnexpectedToolError
 
-from scrapper_legislatie_just import mcp_http
 from scrapper_legislatie_just.query import LegalIndex
+from scrapper_legislatie_just_server import mcp_http
 
 
 def _some_article_id() -> str:

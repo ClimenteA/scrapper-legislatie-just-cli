@@ -7,11 +7,12 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./webapp/staticfiles:/webapp/staticfiles
+      - ../webapp/staticfiles:/webapp/staticfiles
       - ./Caddyfile:/etc/caddy/Caddyfile
       # Read-only: only the expanded HTML is public; law.db / graph.db stay private
       # (the Caddyfile serves /laws/* from /data/legislatie-descarcata/3-expanded).
-      - ./legislatie-descarcata/3-expanded:/data/legislatie-descarcata/3-expanded:ro
+      # Data lives at the repo root, one level above this compose file.
+      - ../legislatie-descarcata/3-expanded:/data/legislatie-descarcata/3-expanded:ro
       - caddy_data:/data
       - caddy_config:/config
     networks:
@@ -20,7 +21,8 @@ services:
   chatcodfiscal-app:
     container_name: chatcodfiscal-app
     build:
-      context: .
+      context: ..
+      dockerfile: server/Dockerfile
       args:
         INSTALL_OCR: 0
     restart: unless-stopped
@@ -35,14 +37,15 @@ services:
       TZ: Europe/Bucharest
     volumes:
       # Bind mount so the index is visible both in the container and on the host.
-      - ./legislatie-descarcata:/data/legislatie-descarcata
+      - ../legislatie-descarcata:/data/legislatie-descarcata
     networks:
       - web
 
   chatcodfiscal-indexer:
     container_name: chatcodfiscal-indexer
     build:
-      context: .
+      context: ..
+      dockerfile: server/Dockerfile
       args:
         INSTALL_OCR: 1
     restart: unless-stopped
@@ -56,7 +59,7 @@ services:
       REINDEX_ON_START: ${REINDEX_ON_START:-0}
     volumes:
       # Bind mount so reindexing done in the container is reflected on the host.
-      - ./legislatie-descarcata:/data/legislatie-descarcata
+      - ../legislatie-descarcata:/data/legislatie-descarcata
     networks:
       - web
 

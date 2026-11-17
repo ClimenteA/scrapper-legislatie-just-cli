@@ -18,6 +18,7 @@ import json
 import sys
 from typing import Any
 
+from .formatting import format_article, format_docs, format_neighbors
 from .misc import strip_diacritics
 from .query import LegalIndex
 
@@ -363,49 +364,6 @@ TOOLS: list[dict[str, Any]] = [
 ]
 
 
-def _format_article(data: dict[str, Any]) -> str:
-    lines = [
-        f"# {data['doc_title']} — {data['label']}",
-        f"SURSA: {data['link']}",
-    ]
-    if data.get("date"):
-        lines.append(f"Versiune: {data['date']}")
-    lines.extend(["", data["text"]])
-    if data.get("ancestors"):
-        lines.extend(["", "**Parinti:**"])
-        for item in data["ancestors"]:
-            lines.append(f"- {item['label']} — {item['link']}")
-    return "\n".join(lines)
-
-
-def _format_neighbors(data: dict[str, list[dict[str, Any]]]) -> str:
-    lines: list[str] = []
-    for direction, title in (
-        ("outgoing", "Trimiteri din nod"),
-        ("incoming", "Citat de"),
-    ):
-        lines.append(f"## {title}")
-        if not data[direction]:
-            lines.append("(niciuna)")
-        for ref in data[direction]:
-            target = ref["label"] or ref["raw"] or ref["target"]
-            link = ref["link"] or ref["raw"] or ""
-            lines.append(f"- [{ref['rel']}] {target} — {link}")
-        lines.append("")
-    return "\n".join(lines)
-
-
-def _format_docs(rows: list[dict[str, Any]]) -> str:
-    lines = ["| act | versiune | consolidare | titlu |", "|---|---|---|---|"]
-    for item in rows:
-        mark = "latest" if item["is_latest"] else "older"
-        lines.append(
-            f"| {item['slug']} | {item['version']} | {mark} | "
-            f"{item['title'][:80]} |"
-        )
-    return "\n".join(lines)
-
-
 def _sanitize_arguments(arguments: dict[str, Any]) -> dict[str, Any]:
     """Strip diacritics from the user's free-text input.
 
@@ -513,7 +471,7 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> str:
         return index.format_search(results)
 
     if name == "article":
-        return _format_article(
+        return format_article(
             index.article(
                 arguments["doc"],
                 arguments["number"],
@@ -522,10 +480,10 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> str:
         )
 
     if name == "show":
-        return _format_article(index.show(arguments["node_id"]))
+        return format_article(index.show(arguments["node_id"]))
 
     if name == "neighbors":
-        return _format_neighbors(
+        return format_neighbors(
             index.neighbors(
                 arguments["node_id"],
                 subtree=bool(arguments.get("subtree", False)),
@@ -540,7 +498,7 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> str:
         )
 
     if name == "docs":
-        return _format_docs(index.docs())
+        return format_docs(index.docs())
 
     raise ValueError(f"Unknown tool: {name}")
 

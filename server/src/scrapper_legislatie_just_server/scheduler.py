@@ -9,8 +9,9 @@ from __future__ import annotations
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from .logger import log
-from .reindex import reindex
+from scrapper_legislatie_just.logger import log
+from scrapper_legislatie_just.reindex import reindex
+
 from .settings import get_settings
 
 BUCHAREST = "Europe/Bucharest"

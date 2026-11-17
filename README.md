@@ -86,6 +86,19 @@ Without `--extra ocr` the CLI and the full local MCP still work (including
 `--no-ocr` runs); only PDF/image reading and OCR-enabled downloads need the
 extra.
 
+The checkout is a **uv workspace** with two packages:
+
+- the root `scrapper-legislatie-just-cli` package — the CLI, the index/pipeline
+  code and the local stdio MCP server;
+- `server/` — the `scrapper-legislatie-just-server` package, i.e. the hosted
+  FastAPI MCP server. It depends on the CLI package with the `[server]` extra.
+
+`uv sync` at the root installs **both** packages from the checkout (a
+`[tool.uv.sources]` workspace override makes the server use the local CLI
+instead of its GitHub URL). You can run the hosted server locally with
+`uv run scrapper-legislatie-just-web` after setting the two secrets from
+[Configuration](#1-configuration).
+
 Every command in this README is written with the `uv run` prefix from the
 checkout. If you installed with the one-liner, just drop `uv run` and call
 `scrapper-legislatie-just-cli` directly.
@@ -591,6 +604,7 @@ This repository supports **two independent modes** with the same legal index:
 | | Local (stdio) | Hosted (FastAPI / Streamable HTTP) |
 |---|---|---|
 | Who runs it | You, from this checkout | A server you deploy with Docker |
+| Package | root `scrapper-legislatie-just-cli` | `server/` → `scrapper-legislatie-just-server` (depends on the CLI package via `git+https`, extra `[server]`) |
 | Client setup | OpenCode starts `mcp_server.py` | OpenCode connects to a URL + token |
 | Tools | All 13 tools | 8 read-only tools (see below) |
 | Personal files | `date-context/`, `raspunsuri-ai/` on your PC | **None** — no user data on the server |
@@ -601,7 +615,44 @@ The local mode is documented above and works exactly as before: `file://`
 links, the fiscal-context questionnaire, PDF reading and `save_answer` all stay
 on your machine. Nothing in this section changes it.
 
+Both packages share one codebase — the server imports `LegalIndex`, the
+citation graph, the link builders and the Markdown formatters from
+`scrapper_legislatie_just`. No index or query logic is duplicated.
+
 ## Hosted (cloud) MCP with FastAPI
+
+### Packages and installation
+
+The hosted server is an independent package in `server/`. Its only runtime
+dependency is the CLI package with the `[server]` extra, installed straight
+from GitHub:
+
+```toml
+# server/pyproject.toml
+dependencies = [
+  "scrapper-legislatie-just-cli[server] @ git+https://github.com/ClimenteA/scrapper-legislatie-just-cli.git@main",
+]
+```
+
+That means you can install the server **without this monorepo**:
+
+```bash
+uv tool install "git+https://github.com/ClimenteA/scrapper-legislatie-just-cli.git@main#subdirectory=server"
+# provides: scrapper-legislatie-just-web, scrapper-legislatie-just-indexer
+```
+
+`[server]` adds FastAPI, the MCP SDK, JWT and the scheduler to the lean local
+install. The `ocr` extra stays on the CLI package, so the indexer image can
+install `[ocr]` while the web image skips the heavy torch/CUDA wheels.
+
+When developing from a checkout, use the root `uv sync` described above: the
+workspace source override replaces the GitHub URL with the local package. The
+git URL is used only when the server package is installed on its own. The
+`server/` Dockerfile is still built with the repo root as context (see
+[Run with Docker](#2-run-with-docker)) so it sees the workspace; the git URL
+matters for standalone `uv tool install`. Pin `@main` to a tag such as
+`@v0.2.0` for reproducible standalone installs.
+
 
 The hosted server exposes only **stateless, read-only tools**: `search`,
 `article`, `show`, `neighbors`, `context`, `docs`, `cypher` and
@@ -622,7 +673,16 @@ mode.
 
 ### 1. Configuration
 
-Copy `.env.example` to `.env` and set at least these two values:
+All deployment files live in `server/`: `docker-compose.yml`, `Dockerfile`,
+`Caddyfile`, `.env.example` and your `.env`. The data folder stays at the
+repository root, one level above `server/`.
+
+From `server/`, copy `.env.example` to `.env` and set at least these two values:
+
+```bash
+cd server
+cp .env.example .env
+```
 
 ```bash
 ADMIN_SECRET_KEY=the-admin-secret-key-change-it
@@ -651,22 +711,29 @@ Other supported variables:
 
 ### 2. Run with Docker
 
-The provided `docker-compose.yml` starts three services: `caddy-proxy`,
+`server/docker-compose.yml` starts three services: `caddy-proxy`,
 `chatcodfiscal-app` (the FastAPI + MCP app, built without the OCR extra) and
 `chatcodfiscal-indexer` (one scheduler process, built with `INSTALL_OCR=1`).
-`caddy-proxy` bind-mounts only `./legislatie-descarcata/3-expanded` (read-only)
+Both images use `server/Dockerfile` with the repository root as build context
+(`context: ..`, resolved from the compose file), so they see the shared CLI
+code, the workspace and the frozen `uv.lock`.
+`caddy-proxy` bind-mounts only `../legislatie-descarcata/3-expanded` (read-only)
 at `/data/legislatie-descarcata/3-expanded`, so `law.db` and `graph.db` are never
 exposed by the public web server. `chatcodfiscal-app` and
-`chatcodfiscal-indexer` bind-mount the whole `./legislatie-descarcata` at
+`chatcodfiscal-indexer` bind-mount the whole `../legislatie-descarcata` at
 `/data/legislatie-descarcata`, so the index is visible both in the containers
 and on the host.
 
 ```bash
-cp .env.example .env
+cd server
+cp .env.example .env   # already done in step 1
 # edit .env, then build the index on the first launch:
 REINDEX_ON_START=1 docker compose up -d --build
 # afterwards set REINDEX_ON_START=0 and restart if needed
 ```
+
+Run every `docker compose` command from `server/` so Compose finds its `.env`
+and resolves the relative bind-mount paths.
 
 The `Caddyfile` routes `mcp.chatcodfiscal.ro` as follows:
 
@@ -1103,7 +1170,8 @@ cannot start it.
 
 ### Tests
 
-The test suite does not use the network:
+The test suite does not use the network. From the checkout, `uv run pytest`
+covers both packages (the root `uv sync` installs the server package too):
 
 ```bash
 uv run pytest

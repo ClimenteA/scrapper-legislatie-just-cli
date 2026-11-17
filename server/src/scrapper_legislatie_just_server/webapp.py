@@ -1,5 +1,9 @@
 """FastAPI host for the hosted (stateless) MCP server.
 
+Lives in the independent ``scrapper-legislatie-just-server`` package, which
+depends on the shared ``scrapper-legislatie-just-cli`` package (the index,
+pipeline and CLI).
+
 Endpoints:
 
 * ``POST /mcp``          — Streamable HTTP MCP, bearer-token protected
@@ -9,7 +13,8 @@ Endpoints:
 
 The personal-file tools are deliberately NOT exposed here: this service keeps
 no user data on disk. Local users keep using the stdio server from
-``mcp_server.py`` with ``date-context/`` and ``raspunsuri-ai/``.
+``scrapper_legislatie_just.mcp_server`` with ``date-context/`` and
+``raspunsuri-ai/``.
 """
 
 from __future__ import annotations
@@ -24,8 +29,9 @@ from fastapi.responses import JSONResponse
 from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import BaseModel
 
+from scrapper_legislatie_just.config import resolve_data_dir, step_dir
+
 from .auth import check_admin_secret, issue_token, parse_expiry, verify_token
-from .config import resolve_data_dir, step_dir
 from .mcp_http import mcp
 from .settings import get_settings, get_web_settings
 
@@ -117,7 +123,7 @@ def manual_reindex(payload: ReindexRequest) -> dict[str, Any]:
     """Trigger the same rebuild the monthly scheduler runs."""
     if not check_admin_secret(payload.admin_secret_key):
         raise HTTPException(status_code=401, detail="Invalid admin secret key.")
-    from .reindex import reindex
+    from scrapper_legislatie_just.reindex import reindex
 
     result = reindex(force=payload.force, ocr=payload.ocr)
     return {"status": "ok", **result}
@@ -143,7 +149,7 @@ def main() -> None:
     """Console entrypoint: uvicorn with multiple workers."""
     settings = get_settings()
     uvicorn.run(
-        "scrapper_legislatie_just.webapp:app",
+        "scrapper_legislatie_just_server.webapp:app",
         host=settings.web_host,
         port=settings.web_port,
         workers=settings.web_workers,

@@ -19,12 +19,17 @@ from typing import Any, Callable
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
-from .config import resolve_data_dir, step_dir
-from .graph import run_cypher
-from .logger import log
-from .mcp_server import _format_article, _format_docs, _format_neighbors
-from .misc import strip_diacritics
-from .query import LegalIndex, NotFoundError
+from scrapper_legislatie_just.config import resolve_data_dir, step_dir
+from scrapper_legislatie_just.formatting import (
+    format_article,
+    format_docs,
+    format_neighbors,
+)
+from scrapper_legislatie_just.graph import run_cypher
+from scrapper_legislatie_just.logger import log
+from scrapper_legislatie_just.misc import strip_diacritics
+from scrapper_legislatie_just.query import LegalIndex, NotFoundError
+
 from .settings import get_settings
 
 SERVER_NAME = "legislatie"
@@ -99,7 +104,7 @@ def article(doc: str, number: str, version: str | None = None) -> str:
     """Intoarce un articol intreg (alineate, litere, note) cu link catre ancora lui. Pentru acte fara articole intoarce codul si descrierea din jur."""
     with _index() as index:
         data = index.article(doc, number, version=version)
-        return strip_diacritics(_format_article(data))
+        return strip_diacritics(format_article(data))
 
 
 @mcp.tool()
@@ -107,7 +112,7 @@ def article(doc: str, number: str, version: str | None = None) -> str:
 def show(node_id: str) -> str:
     """Arata un nod dupa id exact, cu parintii si trimiterile lui."""
     with _index() as index:
-        return strip_diacritics(_format_article(index.show(node_id)))
+        return strip_diacritics(format_article(index.show(node_id)))
 
 
 @mcp.tool()
@@ -116,7 +121,7 @@ def neighbors(node_id: str, subtree: bool = False) -> str:
     """Trimiterile care pleaca din nod si cele care intra in nod. subtree=True include tot articolul."""
     with _index() as index:
         data = index.neighbors(node_id, subtree=subtree)
-        return strip_diacritics(_format_neighbors(data))
+        return strip_diacritics(format_neighbors(data))
 
 
 @mcp.tool()
@@ -134,7 +139,7 @@ def context(question: str, limit: int = 4, doc: str | None = None) -> str:
 def docs() -> str:
     """Lista actelor indexate, cu data consolidarii."""
     with _index() as index:
-        return strip_diacritics(_format_docs(index.docs()))
+        return strip_diacritics(format_docs(index.docs()))
 
 
 @mcp.tool()
@@ -152,7 +157,7 @@ def cypher(query: str) -> str:
 @mcp.tool()
 def convert_currency(amount: float, currency: str, date: str | None = None) -> str:
     """Converteste o suma dintr-o valuta straina in RON cu cursul de referinta BNR. Intoarce suma in RON, cursul aplicat si data exacta a cursului."""
-    from .currency import convert_to_ron, format_conversion
+    from scrapper_legislatie_just.currency import convert_to_ron, format_conversion
 
     result = convert_to_ron(amount, currency, date)
     return format_conversion(result)

@@ -1,0 +1,28 @@
+[project]
+name = "scrapper-legislatie-just-server"
+version = "0.1.0"
+description = "Hosted FastAPI/Streamable HTTP MCP server for the Romanian legal index"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  # The whole legal index, pipeline and CLI is shared with the local install.
+  # `[server]` pulls in FastAPI, the MCP SDK, JWT and the scheduler. The
+  # root uv workspace overrides this with the local checkout during development.
+  "scrapper-legislatie-just-cli[server] @ git+https://github.com/ClimenteA/scrapper-legislatie-just-cli.git@main",
+]
+
+[project.scripts]
+scrapper-legislatie-just-web = "scrapper_legislatie_just_server.webapp:main"
+scrapper-legislatie-just-indexer = "scrapper_legislatie_just_server.scheduler:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+# The CLI dependency is a git direct reference (PEP 508 URL), which Hatchling
+# rejects by default. The uv workspace source override replaces it with the
+# local checkout during development.
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/scrapper_legislatie_just_server"]

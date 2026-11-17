@@ -8,15 +8,15 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from fastapi.testclient import TestClient
 
-from scrapper_legislatie_just.auth import (
+from scrapper_legislatie_just.links import make_link, to_public_link
+from scrapper_legislatie_just.query import LegalIndex
+from scrapper_legislatie_just_server.auth import (
     check_admin_secret,
     issue_token,
     parse_expiry,
     verify_token,
 )
-from scrapper_legislatie_just.links import make_link, to_public_link
-from scrapper_legislatie_just.query import LegalIndex
-from scrapper_legislatie_just.settings import get_settings, get_web_settings
+from scrapper_legislatie_just_server.settings import get_settings, get_web_settings
 
 def sse_json(text: str) -> dict:
     """Extract the first JSON payload from a Streamable HTTP SSE response."""
@@ -36,6 +36,9 @@ def secrets(monkeypatch):
     monkeypatch.setenv("ADMIN_SECRET_KEY", ADMIN_SECRET)
     monkeypatch.setenv("TOKEN_SIGNING_SECRET", SIGNING_SECRET)
     monkeypatch.setenv("PUBLIC_LAWS_BASE_URL", BASE_URL)
+    # TestClient uses host "testserver", which the DNS-rebinding allowlist
+    # rejects; disable it here (production enables it via the .env defaults).
+    monkeypatch.setenv("MCP_DISABLE_DNS_REBINDING", "1")
     # Settings are cached; rebuild them against the patched environment.
     get_settings.cache_clear()
     get_web_settings.cache_clear()
@@ -85,7 +88,7 @@ def test_expired_token_rejected():
 
 def test_hosted_endpoints():
     # Imported here so the autouse fixture has already set the environment.
-    from scrapper_legislatie_just.webapp import app
+    from scrapper_legislatie_just_server.webapp import app
 
     with TestClient(app) as client:
         assert client.get("/health").json()["status"] == "ok"

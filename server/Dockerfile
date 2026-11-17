@@ -17,8 +17,12 @@ RUN curl -fLsS \
     && chmod +x /usr/local/bin/monolith
 
 WORKDIR /app
+# Build context is the repository root (see server/docker-compose.yml), which holds
+# the shared CLI package, the uv workspace and the frozen lockfile. The server
+# package lives in ./server and depends on the CLI via [tool.uv.sources].
 COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
+COPY server ./server
 
 # The web app never reads PDFs, so it uses the lean base install. The indexer
 # needs the OCR stack for base64 images embedded in downloaded HTML.

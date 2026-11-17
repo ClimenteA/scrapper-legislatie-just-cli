@@ -7,6 +7,12 @@ resolution-markers = [
     "sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 
+[manifest]
+members = [
+    "scrapper-legislatie-just-cli",
+    "scrapper-legislatie-just-server",
+]
+
 [[package]]
 name = "accelerate"
 version = "1.15.0"
@@ -1893,19 +1899,14 @@ name = "scrapper-legislatie-just-cli"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "apscheduler" },
     { name = "beautifulsoup4" },
     { name = "cursvalutarbnr" },
-    { name = "fastapi" },
     { name = "graphqlite" },
     { name = "html5lib" },
     { name = "loguru" },
     { name = "lxml" },
     { name = "markdown" },
-    { name = "mcp" },
     { name = "pydantic" },
-    { name = "pydantic-settings" },
-    { name = "pyjwt" },
     { name = "requests" },
     { name = "tenacity" },
     { name = "typer" },
@@ -1917,38 +1918,60 @@ ocr = [
     { name = "docling" },
     { name = "easyocr" },
 ]
+server = [
+    { name = "apscheduler" },
+    { name = "fastapi" },
+    { name = "mcp" },
+    { name = "pydantic-settings" },
+    { name = "pyjwt" },
+]
 
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
+    { name = "scrapper-legislatie-just-server" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "apscheduler", specifier = ">=3.10,<4" },
+    { name = "apscheduler", marker = "extra == 'server'", specifier = ">=3.10,<4" },
     { name = "beautifulsoup4", specifier = ">=4.12.3" },
     { name = "cursvalutarbnr", specifier = ">=1.0.0" },
     { name = "docling", marker = "extra == 'ocr'", specifier = ">=2.90.0" },
     { name = "easyocr", marker = "extra == 'ocr'", specifier = ">=1.7.2" },
-    { name = "fastapi", specifier = ">=0.115" },
+    { name = "fastapi", marker = "extra == 'server'", specifier = ">=0.115" },
     { name = "graphqlite", specifier = ">=0.12.0" },
     { name = "html5lib", specifier = ">=1.1" },
     { name = "loguru", specifier = ">=0.7.2" },
     { name = "lxml", specifier = ">=5.2.0" },
     { name = "markdown", specifier = ">=3.7" },
-    { name = "mcp", specifier = ">=2.0,<3" },
+    { name = "mcp", marker = "extra == 'server'", specifier = ">=2.0,<3" },
     { name = "pydantic", specifier = ">=2.8.2" },
-    { name = "pydantic-settings", specifier = ">=2.8" },
-    { name = "pyjwt", specifier = ">=2.8.0" },
+    { name = "pydantic-settings", marker = "extra == 'server'", specifier = ">=2.8" },
+    { name = "pyjwt", marker = "extra == 'server'", specifier = ">=2.8.0" },
     { name = "requests", specifier = ">=2.32.3" },
     { name = "tenacity", specifier = ">=9.0.0" },
     { name = "typer", specifier = ">=0.12.5" },
     { name = "unidecode", specifier = ">=1.3.8" },
 ]
-provides-extras = ["ocr"]
+provides-extras = ["server", "ocr"]
 
 [package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=8.3.0" }]
+dev = [
+    { name = "pytest", specifier = ">=8.3.0" },
+    { name = "scrapper-legislatie-just-server", editable = "server" },
+]
+
+[[package]]
+name = "scrapper-legislatie-just-server"
+version = "0.1.0"
+source = { editable = "server" }
+dependencies = [
+    { name = "scrapper-legislatie-just-cli", extra = ["server"] },
+]
+
+[package.metadata]
+requires-dist = [{ name = "scrapper-legislatie-just-cli", extras = ["server"], editable = "." }]
 
 [[package]]
 name = "semchunk"
