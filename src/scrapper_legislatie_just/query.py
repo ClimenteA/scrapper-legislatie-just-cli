@@ -107,8 +107,8 @@ class LegalIndex:
         self.graph_path = self.db_path.parent / "graph.db"
         if not self.db_path.exists():
             raise FileNotFoundError(
-                f"Index not found: {self.db_path}. Run "
-                "'scrapper-legislatie-just-cli process' first."
+                f"Index not found: {self.db_path}. Run the indexer with "
+                "REINDEX_ON_START=1 first (or wait for the scheduled rebuild)."
             )
         self.connection = sqlite3.connect(
             f"file:{self.db_path}?mode=ro", uri=True
@@ -752,8 +752,9 @@ class LegalIndex:
                 )
             except FileNotFoundError as ex:
                 raise FileNotFoundError(
-                    f"Citation graph not found: {self.graph_path}. Run "
-                    "'scrapper-legislatie-just-cli process' first."
+                    f"Citation graph not found: {self.graph_path}. Run the "
+                    "indexer with REINDEX_ON_START=1 first (or wait for the "
+                    "scheduled rebuild)."
                 ) from ex
 
         def convert(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:

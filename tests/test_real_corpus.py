@@ -2,7 +2,7 @@
 
 These tests need a generated index and are skipped automatically when
 ``legislatie-descarcata/4-processed/law.db`` is missing (for example in CI).
-Run ``scrapper-legislatie-just-cli process`` first to enable them.
+Build the index with the indexer container first to enable them.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ QUESTIONS = Path(__file__).parent / "fixtures" / "real_questions.jsonl"
 
 pytestmark = pytest.mark.skipif(
     not DB_PATH.exists(),
-    reason="real corpus index not built (run 'scrapper-legislatie-just-cli process')",
+    reason="real corpus index not built (run the indexer container first)",
 )
 
 

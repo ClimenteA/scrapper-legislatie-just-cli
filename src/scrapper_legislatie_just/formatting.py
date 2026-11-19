@@ -1,8 +1,7 @@
-"""Rendering helpers shared by the local stdio MCP and the hosted FastAPI MCP.
+"""Rendering helpers for the HTTP MCP tool layer.
 
-Both transports return the same Markdown shapes for articles, neighbor lists
-and the act listing. Keeping them here avoids duplicating formatting rules
-between ``mcp_server.py`` (local) and the server package's ``mcp_http.py``.
+These functions produce the Markdown shapes returned for articles, neighbor
+lists and the act listing, so formatting rules stay in one place.
 """
 
 from __future__ import annotations

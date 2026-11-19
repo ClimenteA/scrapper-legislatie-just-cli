@@ -2,7 +2,7 @@
 
 Acest folder (`4-processed`) contine indexul legal construit prin Docling din
 doua tipuri de surse: HTML-urile curatate (`3-expanded`) si PDF-urile din
-`pdf_sources` (declaratii ANAF si acte UE), servite din `5-pdfs`. Fiecare
+`0-pdfs` (declaratii ANAF si acte UE), servite din `5-pdfs`. Fiecare
 raspuns trebuie sa trimita la sursa exacta returnata de tool, nu la un rezumat.
 
 ## Regula de aur: DOAR din surse

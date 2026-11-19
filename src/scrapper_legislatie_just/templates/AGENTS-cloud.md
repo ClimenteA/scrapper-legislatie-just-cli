@@ -3,7 +3,7 @@
 Acest server MCP ofera doar tool-uri read-only: cautare in indexul legal,
 declaratii ANAF (fise de actiune), graful Docling si conversie valutara. Nu
 exista fisiere personale pe server. Indexul este construit prin Docling din
-HTML-urile din `3-expanded` si din PDF-urile din `pdf_sources` (declaratii si
+HTML-urile din `3-expanded` si din PDF-urile din `0-pdfs` (declaratii si
 acte UE), servite la `/pdfs/*`.
 
 ## Regula de aur: DOAR din surse
@@ -49,10 +49,11 @@ si cursul BNR.
    in index cu tool-urile `legislatie_*`. Daca indexul nu acopera subiectul,
    spune explicit ca nu ai sursa in corpus; poti trece la o sursa oficiala
    doar in conditiile din sectiunea „Folosirea tool-urilor”.
-2. **Fiecare afirmatie are link.** Formatul linkului este
-   `https://mcp.chatcodfiscal.ro/laws/3-expanded/<act>/<fisier>.html#<ancora>`
-   (ex. `#s_art_87`). Copiaza linkul exact returnat de tool; nu-l reconstrui
-   din memorie.
+2. **Fiecare afirmatie are link.** Linkurile au forma
+   `<base_url>/3-expanded/<act>/<fisier>.html#<ancora>` (ex. `#s_art_87`), unde
+   `<base_url>` este `PUBLIC_LAWS_BASE_URL` configurat in `.env` (local:
+   `http://localhost:8000/laws`; dupa adaugarea Caddy: URL-ul tau public).
+   Copiaza linkul exact returnat de tool; nu-l reconstrui din memorie.
 3. **Verifica exceptiile.** Dupa articolul de baza, ruleaza `neighbors` sau
    `show` pe articol si citeste trimiterile. Legile romanesti au multe
    "exceptii de la exceptii"; raspunsul trebuie sa spuna si cand regula nu se
@@ -99,7 +100,8 @@ orice citat pe care il folosesti. Fisa nu este sursa de drept si nu se citeaza.
 ## Tool-uri disponibile
 
 Toate tool-urile sunt read-only si nu scriu niciun fisier pe server. Linkurile
-returnate sunt URL-uri HTTPS care se deschid in browser.
+returnate sunt URL-uri HTTP(S) construite din `PUBLIC_LAWS_BASE_URL`; copiaza-le
+exact asa cum vin din tool.
 
 - `legislatie_search(query, doc=None, kind=None, limit=8)` — cautare BM25 în
   tot corpusul; intoarce articolul, fragmentul si linkul catre ancora exacta.
@@ -122,13 +124,14 @@ returnate sunt URL-uri HTTPS care se deschid in browser.
   in RON, cursul aplicat si data exacta a cursului; pentru weekend/sarbatori
   foloseste cel mai apropiat curs publicat si spune ce data a aplicat.
 - `legislatie_actions(query=None, limit=10)` — declaratiile ANAF (cod formular,
-  descriere, link HTTPS catre PDF). Foloseste-le in sectiunea ACȚIUNI; nu
+  descriere, link catre PDF). Foloseste-le in sectiunea ACȚIUNI; nu
   inventa formulare care nu apar aici.
 - `legislatie_answer_template()` — formatul de raspuns obligatoriu.
 - `legislatie_graph_visualization()` — link HTML catre graful Docling.
 
-Linkurile PDF au forma `https://mcp.chatcodfiscal.ro/pdfs/<slug>/<fisier>.pdf#page=N`.
-Copiaza-le exact cum vin din tool.
+Linkurile PDF au forma `<radacina>/pdfs/<slug>/<fisier>.pdf#page=N`, unde
+`<radacina>` este `<base_url>` fara sufixul `/laws`. Copiaza-le exact cum vin
+din tool.
 
 ## Formatul raspunsului
 
@@ -152,7 +155,7 @@ Nu pune aici articole sau linkuri; doar concluzia.
 Lista de puncte, fiecare cu link catre ancora exacta:
 
 ```markdown
-- Conform [Codul fiscal, art. 60 lit. a)](https://mcp.chatcodfiscal.ro/laws/3-expanded/...html#s_lit_643) — ...
+- Conform [Codul fiscal, art. 60 lit. a)](<base_url>/3-expanded/...html#s_lit_643) — ...
 ```
 
 Fiecare punct spune **cine**, **ce poate/nu poate face** si **in ce conditii**.

@@ -1,10 +1,11 @@
 [project]
 name = "scrapper-legislatie-just-cli"
 version = "0.1.0"
-description = "CLI for downloading, cleaning, expanding and indexing Romanian legislation from legislatie.just.ro"
+description = "HTTP MCP server over a local index of Romanian legislation from legislatie.just.ro"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    # Download / clean / expand / process pipeline and query layer.
     "typer>=0.12.5",
     "requests>=2.32.3",
     "beautifulsoup4>=4.12.3",
@@ -17,51 +18,28 @@ dependencies = [
     "lxml>=5.2.0",
     "graphqlite>=0.12.0",
     "cursvalutarbnr>=1.0.0",
-]
-
-[project.optional-dependencies]
-# Dependencies needed only by the hosted FastAPI server. The server package
-# depends on `scrapper-legislatie-just-cli[server]` so it gets these through
-# the git dependency; local CLI/stdio installs stay lean without them.
-server = [
-    "mcp>=2.0,<3",
-    "fastapi>=0.115",
-    "pydantic-settings>=2.8",
-    "pyjwt>=2.8.0",
-    "apscheduler>=3.10,<4",
-]
-# Only needed for the local PDF/image tools (read_context) and OCR during
-# download/expand. The hosted FastAPI image intentionally skips this extra,
-# which avoids pulling in torch and the NVIDIA CUDA wheels (~5 GB).
-ocr = [
+    # OCR of base64 images embedded in downloaded HTML. Required by the
+    # pipeline (expand step) and by PDF ingestion, so it is not optional.
     "docling>=2.90.0",
     "easyocr>=1.7.2",
     # Official Docling-Graph interactive visualization of the built index graph.
     "docling-graph>=1.9.2",
+    # FastAPI host + Streamable HTTP MCP tool layer.
+    "mcp>=2.0,<3",
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "pydantic-settings>=2.8",
+    "pyjwt>=2.8.0",
+    "apscheduler>=3.10,<4",
 ]
 
 [project.scripts]
-scrapper-legislatie-just-cli = "scrapper_legislatie_just.cli:app"
-scrapper-legislatie-just-mcp = "scrapper_legislatie_just.mcp_server:main"
-
-# The `scrapper-legislatie-just-web` and `scrapper-legislatie-just-indexer`
-# commands now come from the `server/` package.
-
-[tool.uv.workspace]
-members = ["server"]
-
-# Keep local development on the checkout: without this, `uv sync` would honour
-# the git URL in server/pyproject.toml and edit code that is not being used.
-[tool.uv.sources]
-scrapper-legislatie-just-cli = { workspace = true }
-scrapper-legislatie-just-server = { workspace = true }
+scrapper-legislatie-just-web = "scrapper_legislatie_just.webapp:main"
+scrapper-legislatie-just-indexer = "scrapper_legislatie_just.scheduler:main"
 
 [dependency-groups]
 dev = [
     "pytest>=8.3.0",
-    # Workspace members are not synced by default; pull the server in so the
-    # root test suite (which imports it) and `uv run` have it available.
-    "scrapper-legislatie-just-server",
 ]
 
 [build-system]

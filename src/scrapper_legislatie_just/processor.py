@@ -259,7 +259,7 @@ class LegalIndexBuilder:
         documents = self._discover_documents()
 
         # Unified Docling graph stage: HTML acts keep their source anchors,
-        # PDF acts are converted from pdf_sources/ into the same node shape.
+        # PDF acts are converted from <data>/0-pdfs/ into the same node shape.
         from .pdf_ingest import export_docling_graph, ingest_pdf_sources
 
         pdf_docs, pdf_nodes, actions = ingest_pdf_sources(
@@ -1083,24 +1083,16 @@ class LegalIndexBuilder:
             "",
             "## Utilizare",
             "",
-            "```bash",
-            "# căutare cu snippet și link către HTML",
-            "uv run scrapper-legislatie-just-cli search \"cod caen software\"",
+            "Indexul este servit prin serverul MCP HTTP. Rulează",
+            "`docker compose up -d` din rădăcina depozitului, ia un token din",
+            "`/docs` și conectează clientul (OpenCode, Claude Code etc.) la `/mcp`.",
             "",
-            "# un articol întreg, cu toate alineatele",
-            "uv run scrapper-legislatie-just-cli article codul-fiscal 60",
+            "Tool-urile puse la dispoziție: `search`, `article`, `show`,",
+            "`neighbors`, `context`, `docs`, `cypher`, `convert_currency`,",
+            "`actions`, `answer_template` și `graph_visualization`.",
             "",
-            "# context gata de citit pentru un răspuns",
-            "uv run scrapper-legislatie-just-cli context \"ce taxe plateste un PFA\"",
-            "",
-            "# graful de citări (GraphQLite/Cypher)",
-            "uv run scrapper-legislatie-just-cli cypher \\",
-            "  \"MATCH (a:Articol)-[r:CITEAZA_ARTICOL]->(b:Articol) RETURN a.label, b.label LIMIT 5\"",
-            "```",
-            "",
-            "În OpenCode, serverul MCP `legislatie` expune aceleași operații",
-            "ca tool-uri. Formatul de răspuns este în `AGENTS.md` și",
-            "`answer-format.md`.",
+            "Formatul de răspuns este în `AGENTS-cloud.md` și",
+            "`answer-format.md` (ambele regenerate aici la indexare).",
             "",
             "## Documente indexate",
             "",

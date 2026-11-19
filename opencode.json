@@ -1,13 +1,15 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "instructions": ["legislatie-descarcata/4-processed/AGENTS.md"],
+  "instructions": ["legislatie-descarcata/4-processed/AGENTS-cloud.md"],
   "mcp": {
     "servers": {
       "legislatie": {
-        "type": "local",
-        "command": [".venv/bin/python", "-m", "scrapper_legislatie_just.mcp_server"],
-        "cwd": ".",
-        "timeout": 600000
+        "type": "remote",
+        "url": "http://localhost:8000/mcp",
+        "oauth": false,
+        "codemode": false,
+        "timeout": 600000,
+        "headers": { "Authorization": "Bearer {env:MCP_API_KEY}" }
       }
     }
   }

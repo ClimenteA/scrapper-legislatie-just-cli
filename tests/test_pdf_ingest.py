@@ -71,6 +71,20 @@ def test_manifest_prefers_simple_pdf_for_xfa(tmp_path: Path):
     assert records[0]["xfa"] is True
 
 
+def test_sources_default_to_0_pdfs_inside_data_root(tmp_path: Path, monkeypatch):
+    monkeypatch.delenv("SCRAPPER_PDF_SOURCES_DIR", raising=False)
+    monkeypatch.setattr(pdf_ingest, "_docling_document", lambda path, ocr=False: _Doc())
+    data = tmp_path / "data"
+    sources = data / "0-pdfs"
+    sources.mkdir(parents=True)
+    _sources(sources)
+
+    assert pdf_ingest.resolve_pdf_sources_dir(data_root=data) == sources.resolve()
+    docs, _, actions = pdf_ingest.ingest_pdf_sources(data)
+    assert len(docs) == 2
+    assert len(actions) == 1
+
+
 def test_ingest_writes_graph_doc_and_actions(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(pdf_ingest, "_docling_document", lambda path, ocr=False: _Doc())
     data = tmp_path / "data"

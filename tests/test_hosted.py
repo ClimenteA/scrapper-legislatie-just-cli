@@ -10,13 +10,13 @@ from fastapi.testclient import TestClient
 
 from scrapper_legislatie_just.links import make_link, to_public_link
 from scrapper_legislatie_just.query import LegalIndex
-from scrapper_legislatie_just_server.auth import (
+from scrapper_legislatie_just.auth import (
     check_admin_secret,
     issue_token,
     parse_expiry,
     verify_token,
 )
-from scrapper_legislatie_just_server.settings import get_settings, get_web_settings
+from scrapper_legislatie_just.settings import get_settings, get_web_settings
 
 def sse_json(text: str) -> dict:
     """Extract the first JSON payload from a Streamable HTTP SSE response."""
@@ -88,7 +88,7 @@ def test_expired_token_rejected():
 
 def test_hosted_endpoints():
     # Imported here so the autouse fixture has already set the environment.
-    from scrapper_legislatie_just_server.webapp import app
+    from scrapper_legislatie_just.webapp import app
 
     with TestClient(app) as client:
         assert client.get("/health").json()["status"] == "ok"
@@ -113,6 +113,10 @@ def test_hosted_endpoints():
         )
         assert issued.status_code == 200
         token = issued.json()["token"]
+
+        # The manual rebuild endpoint was removed; startup reindex is the only
+        # explicit trigger (REINDEX_ON_START on the indexer).
+        assert client.post("/admin/reindex", json={}).status_code == 404
 
         payload = {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
         assert client.post("/mcp", json=payload).status_code == 401
@@ -157,6 +161,18 @@ def test_hosted_endpoints():
         assert call.status_code == 200
         assert "file://" not in call.text
         assert BASE_URL in call.text
+
+
+def test_reindex_on_start_setting(monkeypatch):
+    monkeypatch.delenv("REINDEX_ON_START", raising=False)
+    get_settings.cache_clear()
+    try:
+        assert get_settings().reindex_on_start is False
+        monkeypatch.setenv("REINDEX_ON_START", "1")
+        get_settings.cache_clear()
+        assert get_settings().reindex_on_start is True
+    finally:
+        get_settings.cache_clear()
 
 
 def test_local_index_keeps_file_links(monkeypatch):

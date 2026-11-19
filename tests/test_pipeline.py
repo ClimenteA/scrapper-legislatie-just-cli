@@ -6,11 +6,9 @@ from pathlib import Path
 
 import pytest
 from bs4 import BeautifulSoup
-from typer.testing import CliRunner
 
-from scrapper_legislatie_just.cli import app
 from scrapper_legislatie_just.cleaner import LegislatieJustCleaner
-from scrapper_legislatie_just.config import DATA_ROOT_NAME, STEP_DIRS
+from scrapper_legislatie_just.config import STEP_DIRS
 from scrapper_legislatie_just.downloader import (
     LinkuriConsolidate,
     LegislatieJustDownloader,
@@ -30,39 +28,6 @@ SLUG = "legea-contabilitatii"
 
 def _source():
     return next(s for s in surse_legislatie_just if s.slug == SLUG)
-
-
-def test_cli_lists_sources():
-    runner = CliRunner()
-    result = runner.invoke(app, ["list-sources"])
-
-    assert result.exit_code == 0
-    assert SLUG in result.stdout
-    assert "codul-fiscal" in result.stdout
-
-
-def test_cli_paths(tmp_path):
-    runner = CliRunner()
-    result = runner.invoke(app, ["paths", "--data-dir", str(tmp_path)])
-
-    assert result.exit_code == 0
-    for name in STEP_DIRS.values():
-        assert str(tmp_path / name) in result.stdout
-        assert (tmp_path / name).is_dir()
-
-
-def test_default_data_dir_is_current_directory(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("SCRAPPER_DATA_DIR", raising=False)
-
-    runner = CliRunner()
-    result = runner.invoke(app, ["paths"])
-
-    data_root = tmp_path.resolve() / DATA_ROOT_NAME
-    assert str(data_root) in result.stdout
-    for name in STEP_DIRS.values():
-        assert str(data_root / name) in result.stdout
-        assert (data_root / name).is_dir()
 
 
 def test_downloader_helpers(tmp_path):

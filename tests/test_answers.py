@@ -1,11 +1,8 @@
 from pathlib import Path
 
 import pytest
-from typer.testing import CliRunner
 
 from scrapper_legislatie_just.answers import ensure_template, save_answer, slugify
-from scrapper_legislatie_just.cli import app
-from scrapper_legislatie_just.mcp_server import handle
 
 
 def test_slugify_removes_diacritics_and_punctuation():
@@ -63,43 +60,3 @@ def test_save_answer_can_refuse_overwrite(tmp_path: Path):
         "## INTREBARE\n\nAceeasi intrebare\n\nunu\n"
     )
 
-
-def test_cli_save_answer(tmp_path: Path):
-    runner = CliRunner()
-    result = runner.invoke(
-        app,
-        [
-            "save-answer",
-            "Ce spune art. 60?",
-            "--answer",
-            "## TL;DR\n\nDa.",
-            "--output-dir",
-            str(tmp_path),
-        ],
-    )
-
-    assert result.exit_code == 0, result.stdout
-    assert (tmp_path / "ce-spune-art-60.md").exists()
-
-
-def test_mcp_save_answer_tool(tmp_path: Path):
-    response = handle(
-        {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "tools/call",
-            "params": {
-                "name": "save_answer",
-                "arguments": {
-                    "question": "Test intrebare?",
-                    "answer": "## TL;DR\n\nDa.",
-                    "output_dir": str(tmp_path),
-                },
-            },
-        }
-    )
-
-    assert response is not None
-    assert response["result"]["isError"] is False
-    assert "raspuns salvat" in response["result"]["content"][0]["text"].lower()
-    assert (tmp_path / "test-intrebare.md").exists()

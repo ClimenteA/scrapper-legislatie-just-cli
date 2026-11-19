@@ -217,8 +217,8 @@ def run_cypher(
     graph_path = Path(graph_path).expanduser().resolve()
     if not graph_path.exists():
         raise FileNotFoundError(
-            f"Graph not found: {graph_path}. Run "
-            "'scrapper-legislatie-just-cli process' first."
+            f"Graph not found: {graph_path}. Run the indexer with "
+            "REINDEX_ON_START=1 first (or wait for the scheduled rebuild)."
         )
     graph = graphqlite.Graph(str(graph_path))
     try:

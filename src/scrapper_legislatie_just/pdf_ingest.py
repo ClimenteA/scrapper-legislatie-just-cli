@@ -9,10 +9,10 @@ exported Docling graph.
 
 Sources:
 
-* ``pdf_sources/declaratii-pdf/manifest.json`` — ANAF forms.  XFA forms are
-  dynamic and cannot be parsed reliably, so the flattened ``simple_pdf`` is
-  ingested when the manifest marks ``xfa: true``.
-* ``pdf_sources/eu-pdfs/*.pdf`` — EU VAT/customs acts.
+* ``legislatie-descarcata/0-pdfs/declaratii-pdf/manifest.json`` — ANAF forms.
+  XFA forms are dynamic and cannot be parsed reliably, so the flattened
+  ``simple_pdf`` is ingested when the manifest marks ``xfa: true``.
+* ``legislatie-descarcata/0-pdfs/eu-pdfs/*.pdf`` — EU VAT/customs acts.
 """
 
 from __future__ import annotations
@@ -25,12 +25,16 @@ import shutil
 from pathlib import Path
 from typing import Any, Iterable
 
-from .config import step_dir
+from .config import (
+    DATA_ROOT_NAME,
+    PDF_SOURCES_DIRNAME,
+    get_default_data_dir,
+    step_dir,
+)
 from .logger import log
 from .misc import strip_diacritics
 from .processor import RawNode, clean_text
 
-PDF_SOURCES_DIRNAME = "pdf_sources"
 PDF_DATA_DIRNAME = "5-pdfs"
 DECLARATIONS_DIRNAME = "declaratii-pdf"
 EU_PDFS_DIRNAME = "eu-pdfs"
@@ -62,24 +66,27 @@ def _slugify(value: str) -> str:
     return re.sub(r"-+", "-", text)[:80] or "document"
 
 
-def resolve_pdf_sources_dir(explicit: str | Path | None = None) -> Path:
-    """Locate ``pdf_sources/`` (argument, env var, cwd, or repo root)."""
+def resolve_pdf_sources_dir(
+    explicit: str | Path | None = None,
+    data_root: str | Path | None = None,
+) -> Path:
+    """Locate the PDF corpus (explicit argument, env var, then ``<data>/0-pdfs``)."""
     if explicit:
         return Path(explicit).expanduser().resolve()
-    from os import environ
 
-    env_dir = environ.get("SCRAPPER_PDF_SOURCES_DIR")
+    env_dir = os.environ.get("SCRAPPER_PDF_SOURCES_DIR")
     if env_dir:
         return Path(env_dir).expanduser().resolve()
-    here = Path.cwd() / PDF_SOURCES_DIRNAME
-    if here.is_dir():
-        return here.resolve()
-    # When cwd is a subfolder (e.g. server/), walk up to the repo root.
-    for parent in Path(__file__).resolve().parents:
-        candidate = parent / PDF_SOURCES_DIRNAME
+
+    if data_root:
+        return (Path(data_root).expanduser() / PDF_SOURCES_DIRNAME).resolve()
+
+    # Walk up from cwd so the code also works when started from a subfolder.
+    for base in (Path.cwd().resolve(), *Path(__file__).resolve().parents):
+        candidate = base / DATA_ROOT_NAME / PDF_SOURCES_DIRNAME
         if candidate.is_dir():
             return candidate.resolve()
-    return here.resolve()
+    return (get_default_data_dir() / PDF_SOURCES_DIRNAME).resolve()
 
 
 def load_declaration_manifest(sources_dir: Path) -> list[dict[str, Any]]:
@@ -363,18 +370,10 @@ def ingest_pdf_sources(
     Unchanged PDFs are loaded from ``graph.json``; a changed manifest or PDF
     triggers only that document's reconversion.
     """
-    # Scope the PDF corpus to the data root: ``<data-dir>/../pdf_sources``.
-    # A temp data dir used by a test must never ingest the real 576-PDF corpus;
-    # hosted deployments override this with SCRAPPER_PDF_SOURCES_DIR.
-    if sources_dir is None:
-        from os import environ
-
-        sources_dir = (
-            Path(environ["SCRAPPER_PDF_SOURCES_DIR"])
-            if environ.get("SCRAPPER_PDF_SOURCES_DIR")
-            else Path(data_root).resolve().parent / PDF_SOURCES_DIRNAME
-        )
-    sources_dir = Path(sources_dir).expanduser().resolve()
+    # Scope the PDF corpus to the data root: ``<data-dir>/0-pdfs``. A temp data
+    # dir used by a test must never ingest the real corpus; deployments can
+    # still override the location with SCRAPPER_PDF_SOURCES_DIR.
+    sources_dir = resolve_pdf_sources_dir(sources_dir, data_root=data_root)
     descriptors = load_declaration_manifest(sources_dir) + discover_eu_pdfs(sources_dir)
     if not descriptors:
         return [], [], []

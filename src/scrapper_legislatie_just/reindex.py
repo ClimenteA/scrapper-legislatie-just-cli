@@ -1,7 +1,7 @@
-"""Reusable index rebuild used by the admin endpoint and the scheduler.
+"""Reusable index rebuild used by the indexer (on start and on schedule).
 
-It mirrors ``cli.run-all`` (download → clean → expand → process) without the
-Typer output. ``LegalIndexBuilder`` publishes ``law.db`` and ``graph.db`` with
+It runs the full download → clean → expand → process pipeline.
+``LegalIndexBuilder`` publishes ``law.db`` and ``graph.db`` with
 atomic ``os.replace`` calls, so hosted workers always see a complete index.
 A file lock guarantees a single rebuild at a time across processes.
 """

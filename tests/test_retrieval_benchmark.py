@@ -33,7 +33,7 @@ ARTICLE_HEADING = re.compile(
 
 requires_corpus = pytest.mark.skipif(
     not DB_PATH.exists() or not EXPANDED_DIR.exists(),
-    reason="real corpus/index not built (run 'scrapper-legislatie-just-cli process')",
+    reason="real corpus/index not built (run the indexer container first)",
 )
 
 

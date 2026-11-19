@@ -94,16 +94,9 @@ scrie in raspuns. Fisa nu se citeaza si nu este sursa de drept.
 
 ## Salvare
 
-Dupa redactare, salveaza raspunsul in `raspunsuri-ai/`, cu numele fisierului
-derivat din intrebare (slug ASCII, fara diacritice):
-
-```bash
-uv run scrapper-legislatie-just-cli save-answer \
-  "Pot deduce TVA la autoturism?" --answer-file raspuns.md
-```
-
-Echivalentul MCP este `legislatie_save_answer(question, answer)`. Daca intoarce
-„Atentionari format”, corecteaza sectiunile lipsa si salveaza din nou.
+Serverul MCP prin HTTP nu scrie fisiere si nu are un tool de salvare. Daca vrei
+sa pastrezi raspunsul, salveaza-l tu in clientul tau (de exemplu intr-un fisier
+Markdown cu nume derivat din intrebare, slug ASCII, fara diacritice).
 
 ## Interzis
 

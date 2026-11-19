@@ -2,7 +2,6 @@ from bs4 import BeautifulSoup
 
 from scrapper_legislatie_just.cleaner import LegislatieJustCleaner
 from scrapper_legislatie_just.config import STEP_DIRS
-from scrapper_legislatie_just.mcp_server import _sanitize_arguments
 from scrapper_legislatie_just.misc import strip_diacritics
 from scrapper_legislatie_just.processor import clean_text, preformatted_text
 from scrapper_legislatie_just.sources import surse_legislatie_just
@@ -64,20 +63,3 @@ def test_cleaner_writes_ascii_only_html(tmp_path):
     assert "Prezentul act se aplica si in cazul profesionistilor." in cleaned
     assert "Dispozitii generale" in cleaned
 
-
-def test_mcp_sanitizes_user_question():
-    arguments = {
-        "question": "Ce spune art. 60 despre șomaj?",
-        "answer": "### TL;DR\nDa, pentru șomeri.",
-        "limit": 4,
-    }
-
-    cleaned = _sanitize_arguments(arguments)
-
-    assert cleaned == {
-        "question": "Ce spune art. 60 despre somaj?",
-        "answer": "### TL;DR\nDa, pentru someri.",
-        "limit": 4,
-    }
-    # The original mapping is not mutated.
-    assert arguments["question"] == "Ce spune art. 60 despre șomaj?"
