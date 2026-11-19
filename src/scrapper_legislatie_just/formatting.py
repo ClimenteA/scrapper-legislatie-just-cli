@@ -51,3 +51,15 @@ def format_docs(rows: list[dict[str, Any]]) -> str:
             f"{item['title'][:80]} |"
         )
     return "\n".join(lines)
+
+
+def format_actions(rows: list[dict[str, Any]]) -> str:
+    """Render ANAF declaration sheets with a link to the source PDF."""
+    if not rows:
+        return "Nicio declaratie gasita in corpus."
+    lines = ["| cod | declaratie | sursa PDF |", "|---|---|---|"]
+    for item in rows:
+        lines.append(
+            f"| {item['code']} | {item['title'][:120]} | {item['link']} |"
+        )
+    return "\n".join(lines)

@@ -18,6 +18,7 @@ import json
 import sys
 from typing import Any
 
+from .config import resolve_data_dir
 from .formatting import format_article, format_docs, format_neighbors
 from .misc import strip_diacritics
 from .query import LegalIndex
@@ -282,6 +283,15 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "answer_template",
+        "description": (
+            "Intoarce formatul de raspuns OBLIGATORIU (answer-format.md). "
+            "Apela-l inainte de a compune raspunsul, mai ales cand promptul "
+            "are mai multe intrebari."
+        ),
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
         "name": "get_user_tax_context",
         "description": (
             "Citeste contextul fiscal persistent al utilizatorului din "
@@ -361,6 +371,25 @@ TOOLS: list[dict[str, Any]] = [
             "required": ["query"],
         },
     },
+    {
+        "name": "actions",
+        "description": (
+            "Fise de actiune: declaratiile ANAF cu cod formular, descriere si "
+            "link catre PDF-ul sursa. Cauta dupa cod (ex. D300) sau cuvint-cheie."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 50},
+            },
+        },
+    },
+    {
+        "name": "graph_visualization",
+        "description": "Intoarce calea fisierului HTML al grafului Docling.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
 ]
 
 
@@ -391,6 +420,11 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> str:
         )
         return format_conversion(result)
 
+    if name == "answer_template":
+        from .answers import answer_template
+
+        return answer_template()
+
     # Writing an answer does not need the legal index; keep it usable even
     # before ``process`` has built law.db.
     if name == "save_answer":
@@ -401,11 +435,14 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> str:
             arguments["answer"],
             output_dir=arguments.get("output_dir"),
         )
-        return (
+        result = (
             f"Raspuns salvat: {saved['path']}\n"
             f"Slug: {saved['slug']}\n"
             f"Link: {saved['link']}"
         )
+        if saved.get("warnings"):
+            result += "\nAtentionari format: " + " | ".join(saved["warnings"])
+        return result
 
     # The fiscal context is plain TOML in date-context; it must work even
     # before the legal index exists.
@@ -500,6 +537,23 @@ def _call_tool(name: str, arguments: dict[str, Any]) -> str:
     if name == "docs":
         return format_docs(index.docs())
 
+    if name == "actions":
+        from .formatting import format_actions
+
+        return format_actions(
+            index.actions(
+                arguments.get("query"), limit=int(arguments.get("limit", 10))
+            )
+        )
+
+    if name == "graph_visualization":
+        path = resolve_data_dir() / "4-processed" / "graph-docling" / "visualization.html"
+        return (
+            f"Vizualizare graful Docling: {path.resolve().as_uri()}"
+            if path.exists()
+            else "Vizualizarea grafului nu este generata. Ruleaza process."
+        )
+
     raise ValueError(f"Unknown tool: {name}")
 
 
@@ -543,7 +597,15 @@ def handle(message: dict[str, Any]) -> dict[str, Any] | None:
         name = params.get("name")
         arguments = params.get("arguments") or {}
         try:
-            text = strip_diacritics(_call_tool(name, _sanitize_arguments(arguments)))
+            text = _call_tool(name, _sanitize_arguments(arguments))
+            # Fiscal context and the answer template must keep diacritics:
+            # users read them verbatim and tests compare the exact strings.
+            if name not in {
+                "get_user_tax_context",
+                "save_user_tax_context",
+                "answer_template",
+            }:
+                text = strip_diacritics(text)
         except Exception as ex:  # noqa: BLE001 - surfaced to the client
             return _response(
                 request_id,

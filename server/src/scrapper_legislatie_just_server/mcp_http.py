@@ -161,3 +161,35 @@ def convert_currency(amount: float, currency: str, date: str | None = None) -> s
 
     result = convert_to_ron(amount, currency, date)
     return format_conversion(result)
+
+
+@mcp.tool()
+def actions(query: str | None = None, limit: int = 10) -> str:
+    """Fise de actiune: declaratiile ANAF (cod formular, descriere, link PDF). Foloseste-le in sectiunea ACȚIUNI. Cauta dupa cod (ex. D300) sau cuvint-cheie."""
+    from scrapper_legislatie_just.formatting import format_actions
+
+    with _index() as index:
+        rows = index.actions(strip_diacritics(query or ""), limit=max(1, min(limit, 50)))
+        return strip_diacritics(format_actions(rows))
+
+
+@mcp.tool()
+def answer_template() -> str:
+    """Intoarce formatul de raspuns OBLIGATORIU. Apela-l inainte de a compune raspunsul, mai ales cnd promptul are mai multe intrebari."""
+    from scrapper_legislatie_just.answers import answer_template as load_template
+
+    return strip_diacritics(load_template())
+
+
+@mcp.tool()
+def graph_visualization() -> str:
+    """Intoarce linkul HTML catre vizualizarea grafului Docling (nodes/edges) generat la indexare."""
+    from scrapper_legislatie_just.config import resolve_data_dir, step_dir
+
+    root = resolve_data_dir()
+    path = step_dir(root, "processed") / "graph-docling" / "visualization.html"
+    if not path.exists():
+        return "Vizualizarea grafului nu este generata. Ruleaza reindexarea."
+    base = get_settings().laws_base_url
+    root_url = base[: -len("/laws")] if base.endswith("/laws") else base
+    return f"{root_url}/graph/visualization.html"

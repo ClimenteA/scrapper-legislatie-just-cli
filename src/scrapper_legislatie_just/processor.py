@@ -257,6 +257,22 @@ class LegalIndexBuilder:
     def build(self) -> dict:
         started = time.perf_counter()
         documents = self._discover_documents()
+
+        # Unified Docling graph stage: HTML acts keep their source anchors,
+        # PDF acts are converted from pdf_sources/ into the same node shape.
+        from .pdf_ingest import export_docling_graph, ingest_pdf_sources
+
+        pdf_docs, pdf_nodes, actions = ingest_pdf_sources(
+            self.root, force=self.force
+        )
+        preparsed: dict[str, list[RawNode]] = {}
+        for doc in pdf_docs:
+            preparsed[doc["slug"]] = [
+                node for node in pdf_nodes if node.doc_slug == doc["slug"]
+            ]
+            if preparsed[doc["slug"]]:
+                documents.append(doc)
+
         if self.limit is not None:
             documents = documents[: self.limit]
         log.info(f"Am gasit {len(documents)} documente de indexat.")
@@ -293,13 +309,16 @@ class LegalIndexBuilder:
                 f"[{index}/{total_docs}] Indexez {doc['slug']} "
                 f"(versiunea {doc['version']})..."
             )
-            nodes = self._parse_document(doc, all_anchors)
+            nodes = preparsed.get(doc["slug"]) or self._parse_document(
+                doc, all_anchors
+            )
             all_nodes.extend(nodes)
             all_docs.append(doc)
             log.info(f"[{index}/{total_docs}] {doc['slug']}: {len(nodes)} noduri.")
 
         self._insert_docs(connection, all_docs)
         self._insert_nodes(connection, all_nodes)
+        self._insert_actions(connection, actions)
         all_refs = self._build_refs(connection, all_nodes, all_docs)
         self._create_search_index(connection)
 
@@ -326,6 +345,48 @@ class LegalIndexBuilder:
         tmp_graph.replace(self.graph_path)
         refs = len(all_refs)
 
+        # Both source types now produce the same graph-document representation.
+        # PDF graph docs were written during ingestion; do the HTML ones here.
+        from .pdf_ingest import export_docling_graph, write_graph_doc
+
+        for doc in all_docs:
+            if doc["slug"] in preparsed:
+                continue
+            slug_nodes = [
+                node for node in all_nodes if node.doc_slug == doc["slug"]
+            ]
+            if not slug_nodes:
+                continue
+            write_graph_doc(
+                self.root,
+                doc["slug"],
+                {
+                    "source_type": "act-legislativ",
+                    "version": doc["version"],
+                    "title": doc["title"],
+                    "description": doc["description"],
+                    "source_url": doc.get("source_url"),
+                    "html_rel": doc["html_rel"],
+                    "nodes": [
+                        {
+                            "id": node.id,
+                            "anchor": node.anchor,
+                            "kind": node.kind,
+                            "label": node.label,
+                            "text": node.text,
+                            "parent": node.parent,
+                            "path": node.path,
+                            "depth": node.depth,
+                            "order_idx": node.order_idx,
+                            "number": node.number,
+                            "article_id": node.article_id,
+                        }
+                        for node in slug_nodes
+                    ],
+                },
+            )
+        graph_files = export_docling_graph(self.root, all_nodes, all_docs)
+
         elapsed = round(time.perf_counter() - started, 2)
         self._write_catalog(all_docs, len(all_nodes), refs, elapsed)
         self._write_manifest(digest, all_docs, len(all_nodes), refs, elapsed)
@@ -337,6 +398,11 @@ class LegalIndexBuilder:
             "nodes": len(all_nodes),
             "refs": refs,
             "graph_edges": graph_result["edges"],
+            "graph_docling": (
+                str(graph_files["visualization"])
+                if graph_files.get("visualization")
+                else None
+            ),
             "skipped": False,
             "seconds": elapsed,
         }
@@ -611,6 +677,21 @@ class LegalIndexBuilder:
             CREATE INDEX idx_nodes_doc ON nodes(doc_slug, doc_version);
             CREATE INDEX idx_nodes_kind ON nodes(kind);
             CREATE INDEX idx_nodes_article ON nodes(article_id);
+
+            -- Declaratiile ANAF sunt fise de actiune: ce formular se completeaza
+            -- si se incarca in SPV. Nu sunt texte de lege, dar sunt surse.
+            CREATE TABLE actions(
+                doc_slug TEXT NOT NULL,
+                code TEXT NOT NULL,
+                title TEXT,
+                description TEXT,
+                source_url TEXT,
+                pdf_rel TEXT NOT NULL,
+                xfa INTEGER NOT NULL DEFAULT 0,
+                simple_pdf TEXT,
+                artifact TEXT,
+                PRIMARY KEY(doc_slug, code)
+            );
             """
         )
 
@@ -671,6 +752,35 @@ class LegalIndexBuilder:
             ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             rows,
+        )
+
+    @staticmethod
+    def _insert_actions(
+        connection: sqlite3.Connection, actions: list[dict]
+    ) -> None:
+        if not actions:
+            return
+        connection.executemany(
+            """
+            INSERT OR REPLACE INTO actions(
+                doc_slug, code, title, description, source_url, pdf_rel,
+                xfa, simple_pdf, artifact
+            ) VALUES(?,?,?,?,?,?,?,?,?)
+            """,
+            [
+                (
+                    action["doc_slug"],
+                    action["code"],
+                    action["title"],
+                    action["description"],
+                    action.get("source_url"),
+                    action["pdf_rel"],
+                    action["xfa"],
+                    action.get("simple_pdf"),
+                    action.get("artifact"),
+                )
+                for action in actions
+            ],
         )
 
     @staticmethod

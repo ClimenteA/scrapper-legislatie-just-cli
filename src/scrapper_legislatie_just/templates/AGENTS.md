@@ -1,8 +1,32 @@
 # Legislatie Just — instructiuni pentru OpenCode
 
-Acest folder (`4-processed`) contine indexul legal construit din fisierele HTML
-din `3-expanded`. HTML-ul este sursa de adevar: fiecare raspuns trebuie sa
-trimeata la ancora exacta din HTML-ul original, nu la un rezumat.
+Acest folder (`4-processed`) contine indexul legal construit prin Docling din
+doua tipuri de surse: HTML-urile curatate (`3-expanded`) si PDF-urile din
+`pdf_sources` (declaratii ANAF si acte UE), servite din `5-pdfs`. Fiecare
+raspuns trebuie sa trimita la sursa exacta returnata de tool, nu la un rezumat.
+
+## Regula de aur: DOAR din surse
+
+**Ai voie sa afirmi numai ce se afla in textul returnat de tool-urile
+`legislatie_*`.** Nu completa golurile din surse cu cunostinte din memorie, nu
+inferenceaza, nu „interpreteaza prin analogie” si nu adauga reguli, articole,
+cifre, exceptii sau pasi care nu apar in textul citit. Daca sursa nu spune
+explicit un lucru, raspunsul trebuie sa spuna ca nu are sursa pentru el.
+
+Interzis in mod explicit (au fost observate in raspunsuri anterioare):
+
+- sa raspunzi doar cu trimiteri la articole fara a spune direct ce prevede
+  textul (acesta este un non-raspuns);
+- sa inventezi formulare sau declaratii care nu apar in index;
+- sa afirmi ca o exceptie se aplica „daca se face dovada” atunci cand sursa
+  prevede o regula explicita contrara — citeste textul si spune exact ce zice;
+- sa numesti un articol, alineat, litera, formular sau curs valutar fara sa fi
+  citit output-ul tool-ului care il contine;
+- sa folosesti un numar de formular/articol „stiut” din memorie.
+
+Daca nu gasesti sursa, spune literal: `Nu am gasit o prevedere in corpusul
+indexat pentru aceasta intrebare.` si propune 2-4 termeni de cautare. Nu
+trece la web/shell decat in conditiile sectiunii „Folosirea tool-urilor”.
 
 ## Context fiscal persistent (verifica inainte de raspuns)
 
@@ -112,6 +136,53 @@ si cursul BNR.
    `raspunsuri-ai/<slug>.md`, unde slug-ul este intrebarea fara diacritice
    (ex. `Pot deduce TVA?` -> `pot-deduce-tva.md`).
 
+## Intrebari multiple (obligatoriu)
+
+Daca promptul contine mai multe intrebari (inclusiv intrebari numerotate sau
+mai multe semne de intrebare), **imparte-l in intrebari separate** si da cate un
+raspuns complet pentru fiecare, cu aceeasi structura de mai jos. Nu amesteca
+concluziile intr-un singur TL;DR si nu sar peste o intrebare.
+
+Format pentru prompt cu N intrebari:
+
+```markdown
+### Intrebarea 1
+
+<intrebarea exacta>
+
+#### TL;DR
+...
+
+#### TEMEI LEGAL
+...
+
+### Intrebarea 2
+
+...
+```
+
+Daca intrebarile se refera la acelasi articol, cauta-l o singura data, dar
+raspunde separat, cu linkul propriu in fiecare sectiune TEMEI LEGAL.
+
+## Fisa de lucru pentru context (obligatoriu cand contextul creste)
+
+Cand aduni multe articole, linkuri sau documente si contextul conversatiei
+incepe sa se umple:
+
+1. Creeaza un fisier Markdown local in folderul temporar al sesiunii (de ex.
+   folderul in care OpenCode tine planurile, `/tmp/opencode/...` sau
+   `$TMPDIR`), de forma `cercetare-<slug-intrebare>.md`.
+2. Noteaza acolo, pe masura ce gasesti sursele: intrebarea, fiecare articol/
+   litera cu textul relevant, linkul `SURSA:` exact returnat de tool, exceptiile
+   si trimiterile. Nu scrie acolo concluzii din memorie.
+3. când fisierul devine mare, rezuma-l (pastreaza linkurile si citatele exacte)
+   in loc sa pastrezi tot output-ul brut in context.
+4. Foloseste fisa ca sursa pentru a compune raspunsul final, dar **verifica
+   din nou cu tool-ul** orice citat pe care il pui in raspuns.
+
+Fisa nu este o sursa de drept: nu o cita in raspuns si nu o trimite catre
+utilator. Sursele raman intotdeauna linkurile returnate de tool-uri.
+
 ## Flux recomandat
 
 0. `legislatie_get_user_tax_context` — verifica daca exista context fiscal.
@@ -175,9 +246,23 @@ final in `raspunsuri-ai/`.
   suma dintr-o valuta straina in RON cu cursul de referinta BNR. Intoarce suma
   in RON, cursul aplicat si data exacta a cursului; pentru weekend/sarbatori
   foloseste cel mai apropiat curs publicat si spune ce data a aplicat.
+- `legislatie_actions(query=None, limit=10)` — fise de actiune: declaratiile
+  ANAF (cod formular, descriere, link catre PDF-ul sursa). Cauta dupa cod
+  (ex. `D300`, `D311`) sau cuvint-cheie. Foloseste rezultatul in sectiunea
+  ACȚIUNI; nu inventa formulare care nu apar aici.
+- `legislatie_answer_template()` — intoarce formatul de raspuns obligatoriu.
+  Apela-l inainte de a compune raspunsul (mai ales la prompturi cu mai multe
+  intrebari) si respecta-l intocmai.
+- `legislatie_graph_visualization()` — link HTML catre graful Docling
+  (nodes/edges), util pentru a intelege structura surselor.
 - `legislatie_save_answer(question, answer, output_dir=None)` — scrie
   raspunsul final in `raspunsuri-ai/<slug>.md` si intoarce linkul `file://`.
-  Foloseste-l dupa fiecare raspuns.
+  Daca intoarce „Atentionari format”, corecteaza raspunsul si salveaza-l
+  din nou. Foloseste-l dupa fiecare raspuns.
+
+Linkurile catre PDF-uri au forma `.../5-pdfs/<slug>/<fisier>.pdf#page=N` in
+mod local si `https://mcp.chatcodfiscal.ro/pdfs/<slug>/<fisier>.pdf#page=N` in
+mod cloud. Copiaza-le exact cum vin din tool; nu le reconstrui.
 
 ### Fisierele utilizatorului (PDF, imagini, screenshot-uri)
 
@@ -258,6 +343,17 @@ Doar daca exista. Spune explicit:
 - cine este exceptat;
 - ce articol/alineat o prevede (cu link);
 - daca exceptia are la randul ei o exceptie.
+
+### ACȚIUNI
+
+Obligatoriu pentru orice operatiune fiscala. Spune concret ce are de facut
+utilizatorul: ce documente trebuie obtinute/completate si ce trebuie incarcat
+in portalul ANAF SPV. Fiecare pas trebuie sa vina dintr-o sursa citata:
+
+- daca este vorba de o declaratie, foloseste `legislatie_actions` si citeaza
+  linkul PDF returnat (ex. `[D300](.../5-pdfs/...pdf)`);
+- daca pasul rezulta dintr-un articol de lege, citeaza articolul;
+- daca sursa nu precizeaza pasul, NU il inventa — spune ca sursa nu il acopera.
 
 ### Sursa si versiunea
 

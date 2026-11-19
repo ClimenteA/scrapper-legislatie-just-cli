@@ -11,29 +11,47 @@ local behaviour stays byte-for-byte compatible when ``base_url`` is None.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
 
 EXPANDED_MARKER = "/3-expanded/"
+PDF_MARKER = "/5-pdfs/"
+
+
+def _pdf_fragment(rel: str, anchor: str | None) -> str | None:
+    """PDF nodes use ``p<page>_g<n>`` anchors; open them at that page."""
+    if not anchor or not rel.lower().endswith(".pdf"):
+        return anchor
+    match = re.match(r"p(\d+)_g\d+", anchor)
+    return f"page={match.group(1)}" if match else anchor
 
 
 def http_link(html_rel: str, anchor: str | None, base_url: str) -> str:
-    """Build a public HTTP link from a data-relative HTML path.
+    """Build a public HTTP link from a data-relative source path.
 
-    ``html_rel`` is stored in law.db/graph.db relative to the data root and
-    normally starts with ``3-expanded/``. ``base_url`` already ends in the
-    path that maps to ``3-expanded`` (e.g. ``https://host/laws``).
+    ``html_rel`` normally starts with ``3-expanded/`` (HTML acts) but PDF
+    sources live under ``5-pdfs/`` and are served at ``/pdfs/*``. ``base_url``
+    ends in the path mapped to ``3-expanded`` (e.g. ``https://host/laws``).
     """
     rel = html_rel.replace("\\", "/").lstrip("/")
-    url = f"{base_url.rstrip('/')}/{rel}"
-    return f"{url}#{anchor}" if anchor else url
+    if rel.startswith("5-pdfs/"):
+        root = base_url.rstrip("/")
+        if root.endswith("/laws"):
+            root = root[: -len("/laws")]
+        url = f"{root}/pdfs/{rel[len('5-pdfs/'):]}"
+    else:
+        url = f"{base_url.rstrip('/')}/{rel}"
+    fragment = _pdf_fragment(rel, anchor)
+    return f"{url}#{fragment}" if fragment else url
 
 
 def file_link(root: str | Path, html_rel: str, anchor: str | None) -> str:
-    """Original local link: ``file://...#anchor`` (unchanged behaviour)."""
+    """Original local link: ``file://...#anchor`` (PDFs use ``#page=N``)."""
     uri = (Path(root) / html_rel).resolve().as_uri()
-    return f"{uri}#{anchor}" if anchor else uri
+    fragment = _pdf_fragment(html_rel, anchor)
+    return f"{uri}#{fragment}" if fragment else uri
 
 
 def make_link(
@@ -59,6 +77,15 @@ def to_public_link(value: Any, base_url: str) -> Any:
     parsed = urlparse(value)
     path = unquote(parsed.path)
     idx = path.find(EXPANDED_MARKER)
+    if idx < 0:
+        idx = path.find(PDF_MARKER)
+        if idx >= 0:
+            rel = path[idx + 1 :]
+            # PDF file links already carry #page=N; do not rewrite it.
+            fragment = parsed.fragment or None
+            if fragment and fragment.startswith("page="):
+                return http_link(rel, None, base_url) + f"#{fragment}"
+            return http_link(rel, fragment, base_url)
     rel = path[idx + 1 :] if idx >= 0 else path.lstrip("/")
     return http_link(rel, parsed.fragment or None, base_url)
 

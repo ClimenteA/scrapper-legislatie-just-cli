@@ -36,6 +36,8 @@ server = [
 ocr = [
     "docling>=2.90.0",
     "easyocr>=1.7.2",
+    # Official Docling-Graph interactive visualization of the built index graph.
+    "docling-graph>=1.9.2",
 ]
 
 [project.scripts]

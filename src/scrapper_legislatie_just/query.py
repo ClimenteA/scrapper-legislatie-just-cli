@@ -808,16 +808,63 @@ class LegalIndex:
             for row in rows
         ]
 
+    # ----------------------------------------------------------------- actions
+    def actions(self, query: str | None = None, limit: int = 10) -> list[dict[str, Any]]:
+        """ANAF declaration sheets: what form to complete and upload in SPV.
+
+        These are source documents, separate from the legal text. Searching a
+        form code (e.g. ``D300``, ``D311``) or a keyword returns the formular
+        PDF link that answers can cite in the ACȚIUNI section.
+        """
+        from .links import make_link
+
+        try:
+            rows = self.connection.execute(
+                """
+                SELECT doc_slug, code, title, description, source_url, pdf_rel,
+                       xfa, simple_pdf, artifact
+                FROM actions
+                ORDER BY code
+                """
+            ).fetchall()
+        except sqlite3.OperationalError:
+            # An index built before the actions table existed is still valid
+            # for legal text; declarations simply are not available.
+            return []
+        matches: list[dict[str, Any]] = []
+        tokens = [token for token in re.findall(r"[a-z0-9]{3,}", (query or "").lower())]
+        for row in rows:
+            code = str(row["code"])
+            haystack = (
+                f"{code} d{code} declaratia-{code} {row['title']} "
+                f"{row['description']}"
+            ).lower()
+            score = sum(1 for token in tokens if token in haystack)
+            if query and score == 0:
+                continue
+            matches.append(
+                {
+                    "doc_slug": row["doc_slug"],
+                    "code": row["code"],
+                    "title": row["title"],
+                    "description": row["description"],
+                    "source_url": row["source_url"],
+                    "link": make_link(
+                        self.root, row["pdf_rel"], None, self.public_base_url
+                    ),
+                    "xfa": bool(row["xfa"]),
+                    "score": score,
+                }
+            )
+        matches.sort(key=lambda item: (-item["score"], item["code"]))
+        return matches[: max(1, min(limit, 50))]
+
     # ----------------------------------------------------------------- context
     def context(
         self, question: str, limit: int = 4, doc: str | None = None
     ) -> str:
         hits = self.search(question, doc=doc, limit=max(limit * 3, 8))
-        if not hits:
-            return (
-                "Nu am găsit pasaje în corpus pentru această întrebare.\n"
-                "Încearcă sinonime sau numele actului."
-            )
+        no_text_hits = not hits
 
         articles: list[str] = []
         for hit in hits:
@@ -839,9 +886,17 @@ class LegalIndex:
             "",
             f"Întrebare: **{question}**",
             "",
-            "Fiecare link deschide HTML-ul original la ancora exactă.",
+            "Fiecare link deschide sursa indicată (HTML la ancora exactă sau "
+            "PDF la pagina relevantă).",
             "",
         ]
+        if no_text_hits:
+            blocks.append(
+                "Nu am găsit pasaje de lege pentru această întrebare. "
+                "Verifică mai jos fișele de acțiune; altfel încearcă sinonime "
+                "sau numele actului."
+            )
+            blocks.append("")
         for index, article_id in enumerate(articles, 1):
             data = self.content(article_id, max_chars=8000)
             refs = self.neighbors(article_id, subtree=True)
@@ -881,6 +936,17 @@ class LegalIndex:
                     "Text trunchiat. Cere `show` pe subdiviziuni pentru restul."
                 )
                 blocks.append("")
+
+        # Declarations are source documents too: surface the formular PDFs that
+        # matter for the "ACȚIUNI" part of the answer (SPV upload steps).
+        forms = self.actions(question, limit=3)
+        if forms:
+            blocks.append("## Fise de actiune (declaratii ANAF)")
+            for form in forms:
+                blocks.append(
+                    f"- {form['code']} — {form['title'][:160]} — SURSA: {form['link']}"
+                )
+            blocks.append("")
         return "\n".join(blocks)
 
     # ---------------------------------------------------------------- markdown

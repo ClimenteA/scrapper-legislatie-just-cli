@@ -13,6 +13,9 @@ services:
       # (the Caddyfile serves /laws/* from /data/legislatie-descarcata/3-expanded).
       # Data lives at the repo root, one level above this compose file.
       - ../legislatie-descarcata/3-expanded:/data/legislatie-descarcata/3-expanded:ro
+      # PDF sources and the generated Docling graph viewer are public too.
+      - ../legislatie-descarcata/5-pdfs:/data/legislatie-descarcata/5-pdfs:ro
+      - ../legislatie-descarcata/4-processed/graph-docling:/data/legislatie-descarcata/4-processed/graph-docling:ro
       - caddy_data:/data
       - caddy_config:/config
     networks:
@@ -33,11 +36,13 @@ services:
       TOKEN_SIGNING_SECRET: ${TOKEN_SIGNING_SECRET:?set TOKEN_SIGNING_SECRET in .env}
       PUBLIC_LAWS_BASE_URL: https://mcp.chatcodfiscal.ro/laws
       MCP_ALLOWED_HOSTS: mcp.chatcodfiscal.ro,mcp.chatcodfiscal.ro:*,localhost,localhost:*
+      SCRAPPER_PDF_SOURCES_DIR: /data/pdf_sources
       WEB_WORKERS: ${WEB_WORKERS:-2}
       TZ: Europe/Bucharest
     volumes:
       # Bind mount so the index is visible both in the container and on the host.
       - ../legislatie-descarcata:/data/legislatie-descarcata
+      - ../pdf_sources:/data/pdf_sources:ro
     networks:
       - web
 
@@ -52,6 +57,7 @@ services:
     command: ["scrapper-legislatie-just-indexer"]
     environment:
       SCRAPPER_DATA_DIR: /data/legislatie-descarcata
+      SCRAPPER_PDF_SOURCES_DIR: /data/pdf_sources
       TZ: Europe/Bucharest
       # OCR of base64 images in downloaded HTML; needs the `ocr` extra.
       REINDEX_OCR: ${REINDEX_OCR:-1}
@@ -60,6 +66,7 @@ services:
     volumes:
       # Bind mount so reindexing done in the container is reflected on the host.
       - ../legislatie-descarcata:/data/legislatie-descarcata
+      - ../pdf_sources:/data/pdf_sources:ro
     networks:
       - web
 

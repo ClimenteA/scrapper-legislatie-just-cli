@@ -136,6 +136,9 @@ def test_hosted_endpoints():
             "docs",
             "cypher",
             "convert_currency",
+            "actions",
+            "answer_template",
+            "graph_visualization",
         }
 
         call = client.post(

@@ -150,6 +150,9 @@ def test_mcp_lists_every_tool():
         "save_user_tax_context",
         "docs",
         "cypher",
+        "actions",
+        "answer_template",
+        "graph_visualization",
     }
 
 

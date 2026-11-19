@@ -7,6 +7,17 @@ mcp.chatcodfiscal.ro {
         file_server
     }
 
+    # PDF sources (ANAF declarations + EU acts) and the Docling graph viewer.
+    handle_path /pdfs/* {
+        root * /data/legislatie-descarcata/5-pdfs
+        file_server
+    }
+
+    handle_path /graph/* {
+        root * /data/legislatie-descarcata/4-processed/graph-docling
+        file_server
+    }
+
     # Keep the existing static files mount if the app serves any.
     handle_path /static/* {
         root * /webapp/staticfiles

@@ -63,7 +63,7 @@ scrapper-legislatie-just-cli`. To remove everything, see
 [Uninstall](#uninstall).
 
 The Cypher graph (`graphqlite`) is installed by default. The OCR stack
-(`docling`, `easyocr`) is an optional `ocr` extra: the one-line installer and
+(`docling`, `easyocr`, `docling-graph`) is an optional `ocr` extra: the one-line installer and
 source checkouts below include it, because `read_context` and OCR during
 `download`/`expand` need it. The first install downloads several hundred MB
 (together with torch) and takes a few minutes; later runs are cached. The
@@ -231,6 +231,42 @@ useful for invoices or contracts that contain amounts in a foreign currency.
 | 4 | `process` | Builds `law.db` (search index) and `graph.db` (citation graph, queried with Cypher) |
 
 `run-all` runs all four steps in order.
+
+### Unified Docling graph (HTML + PDF)
+
+From `2-clean` onward both source types are represented as one Docling graph:
+
+- `2-clean/*.html` keeps its source anchors (`#s_art_87`, `#s_aln_560`, …) and
+  is parsed deterministically into nodes — no embeddings, no LLM, no API calls;
+- `pdf_sources/eu-pdfs/*.pdf` (EU VAT/customs acts) and
+  `pdf_sources/declaratii-pdf/**` (ANAF declarations, via `manifest.json`) are
+  converted with Docling and mapped onto the same node shape. When
+  `manifest.json` marks a form as `xfa: true`, the flattened `simple_pdf` is
+  ingested instead of the unparseable dynamic form;
+- unchanged PDFs are cached as `3-expanded/<slug>/graph.json`, so reindexing
+  after a `pdf_sources` update only converts what changed;
+- PDFs are hard-linked into `legislatie-descarcata/5-pdfs/` and served at
+  `/pdfs/<slug>/<file>.pdf#page=N`;
+- `4-processed/graph-docling/` contains `nodes.json`, `edges.json`,
+  `graph_data.json`, `graph_stats.json` and `visualization.html`. The HTML is
+  produced by the official
+  [Docling-Graph](https://docling-project.github.io/docling-graph/fundamentals/graph-management/visualization/#visualization-from-json)
+  `InteractiveVisualizer` (interactive Cytoscape graph); no custom viewer is
+  generated. `docling-graph` ships in the `ocr` extra used by the indexer.
+
+ANAF declarations are indexed as **action sheets** (`actions` table): code,
+description and the source PDF. The hosted MCP exposes them through the
+`actions` tool, and `context` adds a "Fișe de acțiune" block when a question is
+about forms. Answers must put the concrete SPV steps in the mandatory ACȚIUNI
+section, citing those sheets — never inventing a form or a step.
+
+New read-only hosted tools: `actions`, `answer_template` and
+`graph_visualization`. `answer_template` returns the mandatory answer format;
+`AGENTS-cloud.md` instructs the client to split multi-question prompts and to
+keep a local Markdown scratch file when the evidence context grows.
+
+The local CLI/stdio server is kept for development, but the supported runtime
+is the hosted FastAPI MCP (see [Hosted (cloud) MCP with FastAPI](#hosted-cloud-mcp-with-fastapi)).
 
 By default `download` keeps only the most recent consolidation for each source:
 older local versions are removed from `1-raw`, `2-clean` and `3-expanded`, and
@@ -738,6 +774,8 @@ and resolves the relative bind-mount paths.
 The `Caddyfile` routes `mcp.chatcodfiscal.ro` as follows:
 
 - `/laws/*` → read-only `3-expanded/` HTML;
+- `/pdfs/*` → read-only `5-pdfs/` PDF sources (declarations + EU acts);
+- `/graph/*` → read-only `4-processed/graph-docling/` visualization;
 - `/static/*` → optional static files;
 - everything else (including `/mcp`, `/admin/*`, `/health`, `/docs`) → the
   FastAPI app on port 8000.
@@ -1043,6 +1081,7 @@ without the removed act.
 | Variable | Purpose |
 |---|---|
 | `SCRAPPER_DATA_DIR` | Default data folder |
+| `SCRAPPER_PDF_SOURCES_DIR` | PDF corpus root (default: `pdf_sources/` next to the data folder) |
 | `SCRAPPER_LOG_LEVEL` | `DEBUG`, `INFO`, `WARNING` |
 | `SCRAPPER_LOG_FILE` | Optional log file |
 

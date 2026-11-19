@@ -44,6 +44,31 @@ def slugify(question: str) -> str:
     return slug or "intrebare"
 
 
+REQUIRED_SECTIONS = (
+    "INTREBARE",
+    "TL;DR",
+    "TEMEI LEGAL",
+    "SURSA",
+)
+_SECTION_RE = re.compile(r"^#{1,3}\s*([A-Za-z ;/]+?)\s*$", re.MULTILINE)
+
+
+def answer_template() -> str:
+    """Return the mandatory answer format so an MCP client can fetch it."""
+    path = Path(__file__).with_name("templates") / "answer-format.md"
+    return path.read_text(encoding="utf-8")
+
+
+def template_warnings(answer: str) -> list[str]:
+    """List mandatory sections missing from ``answer`` (non-blocking)."""
+    present = {match.group(1).upper() for match in _SECTION_RE.finditer(answer)}
+    return [
+        f"Lipseste sectiunea obligatorie '## {section}'."
+        for section in REQUIRED_SECTIONS
+        if section not in present
+    ]
+
+
 def ensure_template(question: str, answer: str) -> str:
     """Return the answer with the ``## INTREBARE`` section guaranteed."""
     body = answer.strip()
@@ -82,4 +107,5 @@ def save_answer(
         "slug": slug,
         "path": str(path),
         "link": path.resolve().as_uri(),
+        "warnings": template_warnings(answer),
     }
