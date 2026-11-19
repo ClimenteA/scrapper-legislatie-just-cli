@@ -20,7 +20,10 @@ Your only local command is `docker compose up -d`.
   `3-expanded/`. If the index is not built yet, set `REINDEX_ON_START=1` in
   `.env` for the first launch (see [Reindexing](#reindexing)).
 - Optionally the ANAF/EU PDF corpus inside the data folder, at
-  `legislatie-descarcata/0-pdfs/` (`declaratii-pdf/` and `eu-pdfs/`).
+  `legislatie-descarcata/0-pdfs/` (`declaratii-pdf/` and `eu-pdfs/`). On the
+  first rebuild each PDF is converted once with Docling to a semantic HTML
+  file in `2-clean/`; later rebuilds reuse that HTML and never re-parse the
+  PDF (see [PDF sources](#pdf-sources-pdfs--clean-html)).
 
 No Python, uv or `monolith` installation is needed on the host: the images
 contain everything, including `monolith` for downloads.
@@ -266,8 +269,10 @@ not set here fall back to the defaults in
 ### Result links and `PUBLIC_LAWS_BASE_URL`
 
 Every link returned by a tool is built from `PUBLIC_LAWS_BASE_URL`:
-HTML acts become `<base>/3-expanded/...#anchor`, PDF sources become
-`<root>/pdfs/...#page=N` (where `<root>` is `<base>` without `/laws`).
+HTML acts — including the ones generated from PDFs — become
+`<base>/3-expanded/...#anchor`. Only the ANAF form links returned by the
+`actions` tool still point at `<root>/pdfs/...` (where `<root>` is `<base>`
+without `/laws`), since those are the actual downloadable forms.
 
 The base URL is **yours to configure**. The local default points at
 `http://localhost:8000/laws`, which is only meaningful once something serves
@@ -288,8 +293,9 @@ complete index.
 
 OCR (`docling`, `easyocr`, `docling-graph`, with torch/CUDA) is a **required
 dependency**, not an optional extra. The pipeline uses it for base64 images
-embedded in downloaded HTML and for PDF ingestion, so the single image shared
-by both containers includes it (and is correspondingly large, ~5 GB).
+embedded in downloaded HTML and for the one-time PDF → HTML conversion, so the
+single image shared by both containers includes it (and is correspondingly
+large, ~5 GB). Routine rebuilds never re-run OCR or Docling over the PDFs.
 
 To rebuild on startup, set `REINDEX_ON_START=1` in `.env` before running
 `make start`. Compose passes it only to the `legislatie-indexer` service, which
@@ -297,6 +303,26 @@ runs the rebuild once before entering the scheduler loop. It defaults to `0`
 (disabled). Set it back to `0` after the first successful build so later
 `make start` calls do not rebuild again; otherwise leave it at `1` to force a
 rebuild on every start.
+
+## PDF sources: PDFs → clean HTML
+
+The rebuild has a step 0 before download:
+
+1. Every PDF in `0-pdfs/declaratii-pdf/` and `0-pdfs/eu-pdfs/` is converted
+   with Docling **once** (XFA declarations use their flattened `simple_pdf`).
+2. The result is written to `2-clean/` as a normal HTML document with the same
+   semantic tags, `S_*` classes and anchors as the HTML produced by the
+   legislatie.just.ro cleaner — one HTML file per PDF.
+3. A cache manifest (`2-clean/.pdf-html-cache.json`) records each PDF's content
+   hash. On the next rebuild, unchanged PDFs are skipped entirely; only new or
+   modified PDFs are converted. `force=True` / a forced reindex reconverts all.
+4. From there the PDFs are ordinary HTML sources: expand copies them into
+   `3-expanded/`, builds TOC and Markdown, and process parses them with the
+   same code path as legislative acts. The original PDFs are still hard-linked
+   into `5-pdfs/` so the `actions` tool can link the downloadable ANAF forms.
+
+This removes the Docling pass from every routine reindex, which was by far the
+slowest part of the pipeline.
 
 ## Adding Caddy yourself
 
@@ -323,7 +349,7 @@ Everything is bind-mounted from the repository root:
 legislatie-descarcata/
 ├── 0-pdfs/       ANAF declarations + EU acts (input for the PDF corpus)
 ├── 1-raw/        downloaded HTML
-├── 2-clean/      cleaned HTML
+├── 2-clean/      cleaned HTML + one HTML per PDF (converted once from 0-pdfs)
 ├── 3-expanded/   HTML, Markdown and TOC JSON per act (public via /laws)
 ├── 4-processed/  law.db, graph.db, AGENTS-cloud.md, answer-format.md
 └── 5-pdfs/       generated PDF copies (public via /pdfs)

@@ -61,11 +61,18 @@ def _run_pipeline(
     from .cleaner import LegislatieJustCleaner
     from .downloader import LegislatieJustDownloader
     from .expander import LegislatieJustExpander
+    from .pdf_to_html import convert_pdfs_to_clean_html
     from .processor import LegalIndexBuilder
 
     surse = list(surse_legislatie_just)
 
-    log.info("Reindex: step 1/4 download")
+    log.info("Reindex: step 0/5 PDF -> HTML (o singura data per fisier)")
+    pdf_result = convert_pdfs_to_clean_html(root, force=force)
+    # PDF sources join the HTML pipeline from expand onward. The downloader
+    # must not fetch them, but it must not treat them as orphans either.
+    all_surse = surse + pdf_result["sources"]
+
+    log.info("Reindex: step 1/5 download")
     downloader = LegislatieJustDownloader(
         surse=surse,
         data_dir=root,
@@ -73,13 +80,13 @@ def _run_pipeline(
         force=force,
         dry_run=False,
         all_versions=False,
-        known_surse=surse,
+        known_surse=all_surse,
     )
     downloaded = downloader.download()
 
-    log.info("Reindex: step 2/4 clean")
+    log.info("Reindex: step 2/5 clean")
     cleaner = LegislatieJustCleaner(
-        surse=surse,
+        surse=all_surse,
         data_dir=root,
         limit=limit,
         force=force,
@@ -87,18 +94,18 @@ def _run_pipeline(
     )
     cleaned = cleaner.cleanify()
 
-    log.info("Reindex: step 3/4 expand")
+    log.info("Reindex: step 3/5 expand")
     expander = LegislatieJustExpander(
-        surse=surse,
+        surse=all_surse,
         data_dir=root,
         limit=limit,
         force=force,
     )
     expanded = expander.expand()
 
-    log.info("Reindex: step 4/4 process")
+    log.info("Reindex: step 4/5 process")
     builder = LegalIndexBuilder(
-        surse=surse,
+        surse=all_surse,
         data_dir=root,
         limit=limit,
         force=force,
@@ -107,6 +114,9 @@ def _run_pipeline(
 
     return {
         "skipped": bool(processed.get("skipped")),
+        "pdf_converted": pdf_result["converted"],
+        "pdf_skipped": pdf_result["skipped"],
+        "pdf_removed": pdf_result["removed"],
         "downloaded": downloaded.get("downloaded", 0),
         "failed": downloaded.get("failed", 0),
         "cleaned": cleaned.get("cleaned", 0),

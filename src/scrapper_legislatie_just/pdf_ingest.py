@@ -93,7 +93,8 @@ def load_declaration_manifest(sources_dir: Path) -> list[dict[str, Any]]:
     """Return the usable records of ``declaratii-pdf/manifest.json``."""
     manifest_path = sources_dir / DECLARATIONS_DIRNAME / MANIFEST_FILENAME
     if not manifest_path.exists():
-        log.warning(f"Lipseste manifestul declaratiilor: {manifest_path}")
+        if sources_dir.exists():
+            log.warning(f"Lipseste manifestul declaratiilor: {manifest_path}")
         return []
     try:
         records = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -301,21 +302,35 @@ def _article_number(text: str) -> str | None:
     return match.group(1).strip() if match else None
 
 
+_CONVERTERS: dict[bool, Any] = {}
+
+
 def _docling_document(path: Path, *, ocr: bool):
+    """Convert one PDF, reusing the (expensive to build) converter.
+
+    Creating a ``DocumentConverter`` loads model configuration for every file;
+    with hundreds of PDFs that dominates the runtime. Build it once per OCR
+    mode and share it across all conversions in the process.
+    """
     from docling.datamodel.base_models import InputFormat
-    from docling.datamodel.pipeline_options import PdfPipelineOptions
     from docling.document_converter import DocumentConverter, PdfFormatOption
 
-    options = PdfPipelineOptions()
-    options.do_ocr = ocr
-    options.do_table_structure = True
-    if ocr:
-        from docling.datamodel.pipeline_options import EasyOcrOptions
+    key = bool(ocr)
+    converter = _CONVERTERS.get(key)
+    if converter is None:
+        from docling.datamodel.pipeline_options import PdfPipelineOptions
 
-        options.ocr_options = EasyOcrOptions(lang=["ro", "en"])
-    converter = DocumentConverter(
-        format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=options)}
-    )
+        options = PdfPipelineOptions()
+        options.do_ocr = ocr
+        options.do_table_structure = True
+        if ocr:
+            from docling.datamodel.pipeline_options import EasyOcrOptions
+
+            options.ocr_options = EasyOcrOptions(lang=["ro", "en"])
+        converter = DocumentConverter(
+            format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=options)}
+        )
+        _CONVERTERS[key] = converter
     return converter.convert(path).document
 
 
@@ -495,6 +510,44 @@ def _relative_to_root(path: Path, root: Path) -> str:
         return path.relative_to(root).as_posix()
     except ValueError:
         return path.resolve().as_posix()
+
+
+def load_pdf_actions(
+    data_root: str | Path,
+    *,
+    sources_dir: Path | None = None,
+) -> list[dict[str, Any]]:
+    """Build ANAF action rows without running Docling.
+
+    PDF text now reaches the index as ordinary HTML (see ``pdf_to_html``), so
+    only the declaration *metadata* is still needed here. The link keeps
+    pointing at the real form PDF under ``5-pdfs`` — that is what a taxpayer
+    actually downloads and uploads in SPV.
+    """
+    root = Path(data_root).expanduser().resolve()
+    sources = resolve_pdf_sources_dir(sources_dir, data_root=root)
+    actions: list[dict[str, Any]] = []
+    for descriptor in load_declaration_manifest(sources):
+        served = (
+            root
+            / PDF_DATA_DIRNAME
+            / descriptor["slug"]
+            / descriptor["source_path"].name
+        )
+        actions.append(
+            {
+                "doc_slug": descriptor["slug"],
+                "code": descriptor["code"],
+                "title": descriptor["title"],
+                "description": descriptor["description"],
+                "source_url": descriptor.get("source_url"),
+                "pdf_rel": _relative_to_root(served, root),
+                "xfa": int(descriptor["xfa"]),
+                "simple_pdf": descriptor.get("simple_pdf"),
+                "artifact": descriptor.get("artifact") or "pdf",
+            }
+        )
+    return actions
 
 
 def export_docling_graph(

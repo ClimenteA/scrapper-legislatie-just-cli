@@ -258,20 +258,12 @@ class LegalIndexBuilder:
         started = time.perf_counter()
         documents = self._discover_documents()
 
-        # Unified Docling graph stage: HTML acts keep their source anchors,
-        # PDF acts are converted from <data>/0-pdfs/ into the same node shape.
-        from .pdf_ingest import export_docling_graph, ingest_pdf_sources
+        # PDFs were converted to 2-clean HTML once by the pdf_to_html step and
+        # are discovered above like any other HTML act, so no Docling call
+        # happens here. Only the ANAF action metadata is still needed.
+        from .pdf_ingest import export_docling_graph, load_pdf_actions
 
-        pdf_docs, pdf_nodes, actions = ingest_pdf_sources(
-            self.root, force=self.force
-        )
-        preparsed: dict[str, list[RawNode]] = {}
-        for doc in pdf_docs:
-            preparsed[doc["slug"]] = [
-                node for node in pdf_nodes if node.doc_slug == doc["slug"]
-            ]
-            if preparsed[doc["slug"]]:
-                documents.append(doc)
+        actions = load_pdf_actions(self.root)
 
         if self.limit is not None:
             documents = documents[: self.limit]
@@ -309,9 +301,7 @@ class LegalIndexBuilder:
                 f"[{index}/{total_docs}] Indexez {doc['slug']} "
                 f"(versiunea {doc['version']})..."
             )
-            nodes = preparsed.get(doc["slug"]) or self._parse_document(
-                doc, all_anchors
-            )
+            nodes = self._parse_document(doc, all_anchors)
             all_nodes.extend(nodes)
             all_docs.append(doc)
             log.info(f"[{index}/{total_docs}] {doc['slug']}: {len(nodes)} noduri.")
@@ -345,13 +335,11 @@ class LegalIndexBuilder:
         tmp_graph.replace(self.graph_path)
         refs = len(all_refs)
 
-        # Both source types now produce the same graph-document representation.
-        # PDF graph docs were written during ingestion; do the HTML ones here.
-        from .pdf_ingest import export_docling_graph, write_graph_doc
+        # Every source (HTML acts and converted PDFs) now produces the same
+        # graph-document representation from the shared HTML parse.
+        from .pdf_ingest import write_graph_doc
 
         for doc in all_docs:
-            if doc["slug"] in preparsed:
-                continue
             slug_nodes = [
                 node for node in all_nodes if node.doc_slug == doc["slug"]
             ]
