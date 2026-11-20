@@ -22,6 +22,10 @@ dependencies = [
     # pipeline (expand step) and by PDF ingestion, so it is not optional.
     "docling>=2.90.0",
     "easyocr>=1.7.2",
+    # Declared directly so the CPU-only source below is applied to them;
+    # both are also transitive dependencies of docling/easyocr.
+    "torch>=2.2.2,<3",
+    "torchvision>=0.5,<1",
     # FastAPI host + Streamable HTTP MCP tool layer.
     "mcp>=2.0,<3",
     "fastapi>=0.115",
@@ -34,6 +38,20 @@ dependencies = [
 [project.scripts]
 scrapper-legislatie-just-web = "scrapper_legislatie_just.webapp:main"
 scrapper-legislatie-just-indexer = "scrapper_legislatie_just.scheduler:main"
+scrapper-legislatie-just-actions-index = "scrapper_legislatie_just.actions_fts:main"
+
+# Docling/EasyOCR ruleaza pe CPU in acest proiect. Wheel-urile torch de pe
+# PyPI trag dupa ele ~2 GB de pachete nvidia-* (CUDA); indexul CPU oficial
+# PyTorch le furnizeaza pe cele fara dependente GPU. `explicit = true` face ca
+# acest index sa fie folosit DOAR pentru pachetele mapate mai jos.
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
+torchvision = [{ index = "pytorch-cpu" }]
 
 [dependency-groups]
 dev = [

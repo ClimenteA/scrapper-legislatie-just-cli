@@ -39,6 +39,9 @@ CACHE_FILENAME = ".pdf-html-cache.json"
 # Mark declaratiile rendered as Markdown-inside-<pre> so old semantic-HTML
 # cache entries are regenerated once after this format change.
 CACHE_FORMAT_PRE = "markdown-pre"
+# EU acts are semantic HTML. Bump this when the node mapping changes so old
+# label-only HTML (all items misclassified as headings, text lost) is rebuilt.
+CACHE_FORMAT_EU = "semantic-text-v2"
 
 # (tag, class, label tag, label class) for every node kind the PDF converter
 # can emit. Structural kinds carry their text in a *_TTL label; content kinds
@@ -275,7 +278,7 @@ def convert_pdfs_to_clean_html(
         # Declaratiile are Markdown in <pre>; EU acts keep semantic HTML. A
         # format change must invalidate an otherwise fresh cache entry.
         is_form = descriptor["kind"] == "declaratie"
-        expected_format = CACHE_FORMAT_PRE if is_form else None
+        expected_format = CACHE_FORMAT_PRE if is_form else CACHE_FORMAT_EU
         fresh = (
             cached.get("file_hash") == file_hash
             and cached.get("meta_hash") == meta_hash
@@ -313,9 +316,8 @@ def convert_pdfs_to_clean_html(
                 "meta_hash": meta_hash,
                 "html_name": descriptor["html_name"],
                 "source_path": descriptor["source_path"].resolve().as_posix(),
+                "format": expected_format,
             }
-            if is_form:
-                manifest[slug]["format"] = CACHE_FORMAT_PRE
             converted += 1
             log.info(f"[0-pdfs] HTML creat: {target.name}")
 

@@ -130,6 +130,77 @@ def test_convert_writes_clean_html_once(tmp_path: Path, monkeypatch):
     assert again["skipped"] == 2
 
 
+class _RealisticDoc:
+    """Docling yields level=1 for every top-level body item, not just headings."""
+
+    def __init__(self):
+        self.items = [
+            (_Item("CAPITOLUL I", "section_header", 2), 1),
+            (_Item("Articolul 5", "section_header", 2), 1),
+            (
+                _Item(
+                    "Orice persoana impozabila care are dreptul de a nu i se impozita "
+                    "achizitiile intracomunitare de bunuri, in conformitate cu "
+                    "articolul 3 din Directiva 2006/112/CE, continua sa beneficieze "
+                    "de acest drept daca au fost indeplinite conditiile legale.",
+                    "text",
+                    2,
+                ),
+                1,
+            ),
+            (_Item("(a) prima litera a alineatului", "list_item", 2), 2),
+        ]
+
+    def iterate_items(self):
+        return iter(self.items)
+
+
+def test_eu_pdf_text_items_keep_full_text_with_real_docling_levels(tmp_path: Path):
+    """Paragraphs must not be turned into empty headings (level is always >= 1)."""
+    descriptors = pdf_ingest.discover_eu_pdfs(_sources(tmp_path))
+    # Use a real descriptor path, but inject the realistic Docling document.
+    from scrapper_legislatie_just import processor
+
+    nodes = pdf_ingest.convert_pdf_to_graph_nodes(
+        _RealisticDoc(),
+        slug=descriptors[0]["slug"],
+        version="curent",
+        title=descriptors[0]["title"],
+        html_rel="",
+    )
+    by_kind = {node.kind: node for node in nodes}
+    assert "articol" in by_kind and "capitol" in by_kind
+    assert "paragraf" in by_kind and "litera" in by_kind
+
+    paragraph = by_kind["paragraf"]
+    assert paragraph.text.startswith("Orice persoana impozabila")
+    assert paragraph.text.endswith("conditiile legale.")
+    assert len(paragraph.text) > 180  # not truncated to a heading label
+    assert by_kind["litera"].text == "(a) prima litera a alineatului"
+    assert processor.clean_text(by_kind["articol"].label) == "Articolul 5"
+
+
+def test_old_eu_html_cache_is_regenerated(tmp_path: Path, monkeypatch):
+    sources = _sources(tmp_path)
+    data = tmp_path / "data"
+    monkeypatch.setattr(pdf_ingest, "_docling_document", lambda path, ocr=False: _Doc())
+    pdf_to_html.convert_pdfs_to_clean_html(data, sources_dir=sources)
+
+    manifest_path = step_dir(data, "clean") / pdf_to_html.CACHE_FILENAME
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    eu_slug = "ue-regulamentul-ue-nr-282-2011"
+    del manifest[eu_slug]["format"]  # cache written before the text fix
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    result = pdf_to_html.convert_pdfs_to_clean_html(data, sources_dir=sources)
+    assert result["converted"] == 1  # only the EU act is redone
+    assert result["skipped"] == 1
+    assert (
+        json.loads(manifest_path.read_text(encoding="utf-8"))[eu_slug]["format"]
+        == pdf_to_html.CACHE_FORMAT_EU
+    )
+
+
 def test_old_declaration_cache_is_regenerated(tmp_path: Path, monkeypatch):
     sources = _sources(tmp_path)
     data = tmp_path / "data"

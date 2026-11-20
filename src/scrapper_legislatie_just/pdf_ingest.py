@@ -240,7 +240,7 @@ def convert_pdf_to_graph_nodes(
     last_page = 1
     counter = 0
 
-    for item, level in _iter_docling_items(document):
+    for item, _level in _iter_docling_items(document):
         text = clean_text(getattr(item, "text", "") or "")
         if not text or len(text) < 3:
             continue
@@ -250,6 +250,11 @@ def convert_pdf_to_graph_nodes(
         counter += 1
         anchor = f"p{page}_g{counter}"
 
+        # Docling's `level` is the length of the traversal stack: 0 for the
+        # body itself and 1 for *every* top-level body item. It cannot be used
+        # to spot headings — doing so classifies all paragraphs as
+        # "sectiune", drops their text and leaves only 180-char labels in the
+        # index. Headings come from Docling's item label and legal wording.
         kind: str | None = None
         number: str | None = None
         if ARTICLE_RE.match(text):
@@ -258,11 +263,11 @@ def convert_pdf_to_graph_nodes(
             kind = "capitol"
         elif SECTION_RE.match(text):
             kind = "sectiune"
-        elif label in {"title", "subtitle"} or (isinstance(level, int) and level > 0):
+        elif label in {"title", "subtitle", "section_header"}:
             kind = "titlu" if counter < 6 else "sectiune"
         elif LETTER_RE.match(text):
             kind = "litera"
-        elif NUMBER_RE.match(text):
+        elif NUMBER_RE.match(text) or label == "list_item":
             kind = "alineat"
         else:
             kind = "paragraf"

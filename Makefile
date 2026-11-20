@@ -8,7 +8,7 @@ start:
 stop:
 	docker compose down
 
-# Build the image (OCR is a required dependency, so this pulls torch/CUDA).
+# Build the image (OCR uses CPU-only torch; no nvidia/CUDA wheels).
 build:
 	docker compose build
 

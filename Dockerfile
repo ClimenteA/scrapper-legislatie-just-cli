@@ -19,8 +19,9 @@ RUN curl -fLsS \
 WORKDIR /app
 # Build context is the repository root (see docker-compose.yml), which holds
 # the single package, its scripts and the frozen lockfile. OCR (docling,
-# easyocr) is a required dependency, so there is one image for
-# both the web app and the indexer.
+# easyocr) is a required dependency, so there is one image for both the web
+# app and the indexer. torch/torchvision come from the CPU-only PyTorch index
+# configured in pyproject.toml, so no nvidia-*/CUDA wheels are downloaded.
 COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
 

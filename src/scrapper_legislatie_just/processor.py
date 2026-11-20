@@ -812,6 +812,12 @@ class LegalIndexBuilder:
             """
         )
 
+        # Declaration sheets reuse the same metadata already stored in the
+        # actions table; no PDF/Docling pass is needed for this FTS index.
+        from .actions_fts import ensure_actions_fts
+
+        ensure_actions_fts(connection)
+
     # -------------------------------------------------------------------- refs
     def _build_refs(
         self,
@@ -1041,7 +1047,7 @@ class LegalIndexBuilder:
 
     def _write_instructions(self) -> None:
         template_dir = Path(__file__).with_name("templates")
-        for name in ("AGENTS.md", "AGENTS-cloud.md", "answer-format.md"):
+        for name in ("AGENTS.md", "answer-format.md"):
             source = template_dir / name
             if not source.exists():
                 continue
@@ -1074,7 +1080,7 @@ class LegalIndexBuilder:
             "`neighbors`, `context`, `docs`, `cypher`, `convert_currency`,",
             "`actions` și `answer_template`.",
             "",
-            "Formatul de răspuns este în `AGENTS-cloud.md` și",
+            "Formatul de răspuns este în `AGENTS.md` și",
             "`answer-format.md` (ambele regenerate aici la indexare).",
             "",
             "## Documente indexate",

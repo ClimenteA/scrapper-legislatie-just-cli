@@ -155,6 +155,73 @@ def test_actions_tolerates_old_index(tmp_path: Path):
     index.close()
 
 
+def test_actions_matches_codes_with_separators(tmp_path: Path):
+    """A natural ``D212`` query must find a stored ``D_212_2736_2025`` code."""
+    db = tmp_path / "law.db"
+    with sqlite3.connect(db) as connection:
+        connection.execute(
+            "CREATE TABLE actions(doc_slug TEXT, code TEXT, title TEXT, "
+            "description TEXT, source_url TEXT, pdf_rel TEXT, xfa INT, "
+            "simple_pdf TEXT, artifact TEXT)"
+        )
+        connection.execute(
+            "INSERT INTO actions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                "declaratie-d-212-2736-2025",
+                "D_212_2736_2025",
+                "Declaratie unica",
+                "impozit pe venit si contributii sociale",
+                "https://example.invalid/d212.pdf",
+                "5-pdfs/declaratie-d-212-2736-2025/D_212_2736_2025.pdf",
+                1,
+                "",
+                "pdf",
+            ),
+        )
+    index = LegalIndex(db_path=db)
+    rows = index.actions("D212")
+    assert len(rows) == 1
+    assert rows[0]["code"] == "D_212_2736_2025"
+    index.close()
+
+
+def test_actions_fts_built_from_metadata_without_pdfs(tmp_path: Path):
+    """The FTS index is built only from the actions table, not from PDFs."""
+    from scrapper_legislatie_just.actions_fts import refresh_actions_fts
+
+    db = tmp_path / "law.db"
+    with sqlite3.connect(db) as connection:
+        connection.execute(
+            "CREATE TABLE actions(doc_slug TEXT, code TEXT, title TEXT, "
+            "description TEXT, source_url TEXT, pdf_rel TEXT, xfa INT, "
+            "simple_pdf TEXT, artifact TEXT)"
+        )
+        connection.execute(
+            "INSERT INTO actions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                "declaratie-d-212-2736-2025",
+                "D_212_2736_2025",
+                "Declaratie unica",
+                "impozit pe venit si contributii sociale",
+                "https://example.invalid/d212.pdf",
+                "5-pdfs/declaratie-d-212-2736-2025/D_212_2736_2025.pdf",
+                1,
+                "",
+                "pdf",
+            ),
+        )
+
+    result = refresh_actions_fts(db)
+    assert result["declarations"] == 1
+    assert result["applied"] is True
+
+    index = LegalIndex(db_path=db)
+    rows = index.actions("D212")
+    assert len(rows) == 1
+    assert rows[0]["code"] == "D_212_2736_2025"
+    index.close()
+
+
 def test_template_warnings_lists_missing_sections():
     warnings = template_warnings("## TL;DR\n\nDa.")
     assert any("INTREBARE" in item for item in warnings)

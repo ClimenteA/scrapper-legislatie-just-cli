@@ -810,55 +810,126 @@ class LegalIndex:
         ]
 
     # ----------------------------------------------------------------- actions
+    def _table_exists(self, name: str) -> bool:
+        return bool(
+            self.connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)
+            ).fetchone()
+        )
+
+    @staticmethod
+    def _action_item(
+        row: sqlite3.Row, score: float, link: str
+    ) -> dict[str, Any]:
+        return {
+            "doc_slug": row["doc_slug"],
+            "code": row["code"],
+            "title": row["title"],
+            "description": row["description"],
+            "source_url": row["source_url"],
+            "link": link,
+            "xfa": bool(row["xfa"]),
+            "score": score,
+        }
+
+    def _actions_fts_search(
+        self, query: str, limit: int, make_link: Any
+    ) -> list[dict[str, Any]]:
+        """BM25 search over declaration metadata (no PDF text, no Docling)."""
+        parts = _query_tokens(query)
+        match = " OR ".join(_fts_term(stem) for _, stem in parts)
+        if not match:
+            return []
+        sql = """
+            SELECT a.doc_slug, a.code, a.title, a.description, a.source_url,
+                   a.pdf_rel, a.xfa, a.simple_pdf, a.artifact,
+                   bm25(actions_fts) AS score
+            FROM actions_fts
+            JOIN actions a ON a.rowid = actions_fts.rowid
+            WHERE actions_fts MATCH ?
+            ORDER BY score, a.code
+            LIMIT ?
+        """
+        rows = self.connection.execute(sql, (match, limit)).fetchall()
+        return [
+            self._action_item(
+                row,
+                float(row["score"]),
+                make_link(self.root, row["pdf_rel"], None, self.public_base_url),
+            )
+            for row in rows
+        ]
+
+    def _actions_manual(
+        self, query: str, limit: int, make_link: Any
+    ) -> list[dict[str, Any]]:
+        """Fallback for indexes built before ``actions_fts`` existed."""
+        rows = self.connection.execute(
+            "SELECT doc_slug, code, title, description, source_url, pdf_rel, "
+            "xfa, simple_pdf, artifact FROM actions"
+        ).fetchall()
+        tokens = [
+            token for token in re.findall(r"[a-z0-9]{3,}", query.lower())
+        ]
+        matches: list[dict[str, Any]] = []
+        for row in rows:
+            code = str(row["code"])
+            compact_code = re.sub(r"[^a-z0-9]", "", code.lower())
+            haystack = (
+                f"{code} d{code} declaratia-{code} {compact_code} "
+                f"d{compact_code} declaratia-{compact_code} "
+                f"{row['title']} {row['description']}"
+            ).lower()
+            score = sum(1 for token in tokens if token in haystack)
+            if score == 0:
+                continue
+            matches.append(
+                self._action_item(
+                    row,
+                    float(score),
+                    make_link(self.root, row["pdf_rel"], None, self.public_base_url),
+                )
+            )
+        matches.sort(key=lambda item: (-item["score"], item["code"]))
+        return matches[:limit]
+
     def actions(self, query: str | None = None, limit: int = 10) -> list[dict[str, Any]]:
         """ANAF declaration sheets: what form to complete and upload in SPV.
 
         These are source documents, separate from the legal text. Searching a
-        form code (e.g. ``D300``, ``D311``) or a keyword returns the formular
+        form code (e.g. ``D300``, ``D212``) or a keyword returns the formular
         PDF link that answers can cite in the ACȚIUNI section.
         """
         from .links import make_link
 
-        try:
-            rows = self.connection.execute(
-                """
-                SELECT doc_slug, code, title, description, source_url, pdf_rel,
-                       xfa, simple_pdf, artifact
-                FROM actions
-                ORDER BY code
-                """
-            ).fetchall()
-        except sqlite3.OperationalError:
+        limit = max(1, min(limit, 50))
+        if not self._table_exists("actions"):
             # An index built before the actions table existed is still valid
             # for legal text; declarations simply are not available.
             return []
-        matches: list[dict[str, Any]] = []
-        tokens = [token for token in re.findall(r"[a-z0-9]{3,}", (query or "").lower())]
-        for row in rows:
-            code = str(row["code"])
-            haystack = (
-                f"{code} d{code} declaratia-{code} {row['title']} "
-                f"{row['description']}"
-            ).lower()
-            score = sum(1 for token in tokens if token in haystack)
-            if query and score == 0:
-                continue
-            matches.append(
-                {
-                    "doc_slug": row["doc_slug"],
-                    "code": row["code"],
-                    "title": row["title"],
-                    "description": row["description"],
-                    "source_url": row["source_url"],
-                    "link": make_link(
-                        self.root, row["pdf_rel"], None, self.public_base_url
-                    ),
-                    "xfa": bool(row["xfa"]),
-                    "score": score,
-                }
-            )
-        matches.sort(key=lambda item: (-item["score"], item["code"]))
-        return matches[: max(1, min(limit, 50))]
+
+        if not query:
+            rows = self.connection.execute(
+                "SELECT doc_slug, code, title, description, source_url, pdf_rel, "
+                "xfa, simple_pdf, artifact FROM actions ORDER BY code"
+            ).fetchall()
+            return [
+                self._action_item(
+                    row,
+                    0.0,
+                    make_link(self.root, row["pdf_rel"], None, self.public_base_url),
+                )
+                for row in rows[:limit]
+            ]
+
+        if self._table_exists("actions_fts"):
+            try:
+                return self._actions_fts_search(query, limit, make_link)
+            except sqlite3.OperationalError:
+                # Malformed match expression or an old FTS layout: fall back
+                # to the manual scan instead of returning nothing.
+                pass
+        return self._actions_manual(query, limit, make_link)
 
     # ----------------------------------------------------------------- context
     def context(
