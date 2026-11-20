@@ -3,7 +3,7 @@
 Local mode (CLI / stdio MCP) keeps the original ``file://.../3-expanded/...``
 links so they open in the downloaded HTML on the user's machine. Hosted mode
 (FastAPI MCP) builds equivalent ``https://<host>/laws/3-expanded/...`` links,
-which Caddy serves from the read-only ``3-expanded`` folder.
+which the FastAPI app serves from the read-only ``3-expanded`` folder.
 
 Keeping the helpers here means the two modes share one mapping rule and the
 local behaviour stays byte-for-byte compatible when ``base_url`` is None.

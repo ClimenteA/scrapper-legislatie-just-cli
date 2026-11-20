@@ -12,8 +12,8 @@ services:
       SCRAPPER_DATA_DIR: /data/legislatie-descarcata
       ADMIN_SECRET_KEY: ${ADMIN_SECRET_KEY:?set ADMIN_SECRET_KEY in .env}
       TOKEN_SIGNING_SECRET: ${TOKEN_SIGNING_SECRET:?set TOKEN_SIGNING_SECRET in .env}
-      # Prefix used for every link returned by the MCP tools. Point it at
-      # Caddy (or any static server for 3-expanded/5-pdfs) when you add one.
+      # Prefix used for every link returned by the MCP tools. FastAPI serves
+      # the expanded HTML and source PDFs from this same host.
       PUBLIC_LAWS_BASE_URL: ${PUBLIC_LAWS_BASE_URL:-http://localhost:8000/laws}
       MCP_ALLOWED_HOSTS: ${MCP_ALLOWED_HOSTS:-localhost,localhost:*,127.0.0.1,127.0.0.1:*}
       MCP_ALLOWED_ORIGINS: ${MCP_ALLOWED_ORIGINS:-http://localhost:8000}

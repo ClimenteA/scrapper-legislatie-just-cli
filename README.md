@@ -30,7 +30,9 @@ docker compose up -d
 ```
 
 The MCP endpoint is `http://localhost:8000/mcp`. Check that the app is
-available at <http://localhost:8000/health>.
+available at <http://localhost:8000/health>. Expanded legal HTML files are
+served under `http://localhost:8000/laws/3-expanded/`, and source PDF files
+under `http://localhost:8000/pdfs/`.
 
 ## Get an MCP token
 

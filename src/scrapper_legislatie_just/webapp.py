@@ -9,6 +9,8 @@ Endpoints:
 * ``POST /mcp``          — Streamable HTTP MCP, bearer-token protected
 * ``POST /admin/tokens`` — issue a signed token (admin_secret_key in body)
 * ``GET  /health``       — liveness + index presence
+* ``GET  /laws/3-expanded/*`` — public expanded legal HTML
+* ``GET  /pdfs/*``        — public source PDFs
 
 The personal-file tools are deliberately NOT exposed here: the service keeps
 no user data on disk and exposes only the read-only, stateless legal tools.
@@ -23,6 +25,7 @@ from typing import Any
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import BaseModel
 
@@ -65,6 +68,24 @@ app = FastAPI(
     description="Hosted, stateless MCP over the Romanian legal index.",
     version="1.0.0",
     lifespan=lifespan,
+)
+
+
+# Serve the public legal sources alongside the MCP API. The corpus is mounted
+# read-only from the app's perspective: clients can only issue GET/HEAD requests
+# through Starlette's StaticFiles implementation.
+data_root = resolve_data_dir()
+expanded_dir = step_dir(data_root, "expanded")
+pdfs_dir = data_root / "5-pdfs"
+app.mount(
+    "/laws/3-expanded",
+    StaticFiles(directory=expanded_dir, check_dir=False),
+    name="laws-expanded",
+)
+app.mount(
+    "/pdfs",
+    StaticFiles(directory=pdfs_dir, check_dir=False),
+    name="laws-pdfs",
 )
 
 

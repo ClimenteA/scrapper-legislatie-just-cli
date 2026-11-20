@@ -52,7 +52,7 @@ si cursul BNR.
 2. **Fiecare afirmatie are link.** Linkurile au forma
    `<base_url>/3-expanded/<act>/<fisier>.html#<ancora>` (ex. `#s_art_87`), unde
    `<base_url>` este `PUBLIC_LAWS_BASE_URL` configurat in `.env` (local:
-   `http://localhost:8000/laws`; dupa adaugarea Caddy: URL-ul tau public).
+   `http://localhost:8000/laws`; in cloud: URL-ul public al aplicatiei FastAPI).
    Copiaza linkul exact returnat de tool; nu-l reconstrui din memorie.
 3. **Verifica exceptiile.** Dupa articolul de baza, ruleaza `neighbors` sau
    `show` pe articol si citeste trimiterile. Legile romanesti au multe
