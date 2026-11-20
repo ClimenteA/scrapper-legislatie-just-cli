@@ -73,7 +73,15 @@ mcp = MCPServer(
     instructions=(
         "Index legislativ romanesc. Cauta mai intai cu search/context, "
         "citeste articolul cu article, verifica exceptiile cu neighbors/show "
-        "si citeaza linkurile HTTPS returnate."
+        "si citeaza linkurile HTTPS returnate. Pentru TVA verifica intotdeauna "
+        "Codul fiscal + Normele metodologice + actele UE + formularele din "
+        "actions. Regula VIES: clientul care nu a comunicat codul poate fi "
+        "considerat neimpozabil conform Normelor metodologice pct. (9), nu "
+        "pe baza unui certificat de inregistrare. Un numar de articol nu este "
+        "cod de formular (nu exista 'decontul 323'). Anularea codului de TVA "
+        "impune D311 si art. 11 alin. (6)/(7). Da concluzia directa in fiecare "
+        "TL;DR, descompune intrebarile multiple si finalizeaza cu "
+        "validate_answer(answer)."
     ),
 )
 
@@ -179,3 +187,14 @@ def answer_template() -> str:
     from scrapper_legislatie_just.answers import answer_template as load_template
 
     return strip_diacritics(load_template())
+
+
+@mcp.tool()
+def validate_answer(answer: str) -> str:
+    """Auto-audit inainte de trimitere: sectiuni obligatorii, linkuri cu ancora, distinctia articol/formular si versiunea. Nu verifica daca dreptul citat sustine concluzia."""
+    from scrapper_legislatie_just.answers import audit_answer
+
+    warnings = audit_answer(answer)
+    if not warnings:
+        return "OK: raspunsul trece auto-auditul de structura si citate."
+    return strip_diacritics("Avertismente auto-audit:\n- " + "\n- ".join(warnings))

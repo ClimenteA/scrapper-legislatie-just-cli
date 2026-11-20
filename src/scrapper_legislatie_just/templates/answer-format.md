@@ -25,7 +25,9 @@ Un singur paragraf, maximum 3 propozitii. Concluzia directa:
 - `Nu daca ai Y.`
 - `Depinde: ...`
 
-Fara linkuri aici.
+Fara linkuri aici. Spune explicit „da / nu / depinde + ce anume faci"; nu doar
+trimiteri la articole — altfel e un non-raspuns pentru cineva care nu stie
+raspunsul.
 
 ## TEMEI LEGAL
 
@@ -39,13 +41,16 @@ Fiecare punct: afirmatie + link catre ancora exacta returnata de tool.
 Reguli:
 
 - linkul trebuie sa fie cel returnat de tool (nu inventat);
+- daca tool-ul returneaza `#s_lit_X` / `#s_aln_X` pentru textul citat, foloseste
+  ancora aceea, nu `#s_art_Y` (nivel articol); articolul doar cand nu exista
+  ancora mai fina;
 - pentru PDF-uri linkul contine `#page=N`, pentru HTML `#s_art_...`;
 - spune cine poate face ce si in ce conditii;
 - daca exista o exceptie, pune un punct separat cu linkul ei;
 - daca o exceptie are la randul ei o exceptie, spune-o explicit;
 - nu pune mai mult de 6-8 puncte; grupeaza prevederile inrudite;
-- daca raspunsul se bazeaza pe un document al utilizatorului, citeste-l intai
-  cu `legislatie_read_context` si citeaza-l cu linkul `SURSA:` primit.
+- daca sursa e un PDF, citeaza linkul cu `#page=N` returnat de tool; serverul
+  hosted nu expune fisiere personale si nu are tool de citire a acestora.
 
 ## Exceptii / atentionari
 

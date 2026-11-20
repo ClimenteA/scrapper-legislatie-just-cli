@@ -1078,7 +1078,7 @@ class LegalIndexBuilder:
             "",
             "Tool-urile puse la dispoziție: `search`, `article`, `show`,",
             "`neighbors`, `context`, `docs`, `cypher`, `convert_currency`,",
-            "`actions` și `answer_template`.",
+            "`actions`, `answer_template` și `validate_answer`.",
             "",
             "Formatul de răspuns este în `AGENTS.md` și",
             "`answer-format.md` (ambele regenerate aici la indexare).",

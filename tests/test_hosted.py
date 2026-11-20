@@ -142,6 +142,7 @@ def test_hosted_endpoints():
             "convert_currency",
             "actions",
             "answer_template",
+            "validate_answer",
         }
 
         call = client.post(
