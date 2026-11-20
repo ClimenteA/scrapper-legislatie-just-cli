@@ -179,17 +179,3 @@ def answer_template() -> str:
     from scrapper_legislatie_just.answers import answer_template as load_template
 
     return strip_diacritics(load_template())
-
-
-@mcp.tool()
-def graph_visualization() -> str:
-    """Intoarce linkul HTML catre vizualizarea grafului Docling (nodes/edges) generat la indexare."""
-    from scrapper_legislatie_just.config import resolve_data_dir, step_dir
-
-    root = resolve_data_dir()
-    path = step_dir(root, "processed") / "graph-docling" / "visualization.html"
-    if not path.exists():
-        return "Vizualizarea grafului nu este generata. Ruleaza reindexarea."
-    base = get_settings().laws_base_url
-    root_url = base[: -len("/laws")] if base.endswith("/laws") else base
-    return f"{root_url}/graph/visualization.html"

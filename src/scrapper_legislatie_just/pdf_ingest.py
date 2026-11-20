@@ -553,12 +553,13 @@ def load_pdf_actions(
 def export_docling_graph(
     root: Path, nodes: list[RawNode], documents: list[dict[str, Any]]
 ) -> dict[str, Path | None]:
-    """Export the graph and build the official Docling-Graph visualization.
+    """Export the citation graph as JSON files under ``4-processed/graph-docling``.
 
-    Nodes/edges are written in the JSON layout consumed by
-    ``docling_graph.core.visualizers.InteractiveVisualizer``
-    (``display_cytoscape_graph(input_format='json')``), which produces the
-    interactive Cytoscape HTML. No custom viewer is generated.
+    Only machine-readable data is written (``nodes.json``, ``edges.json``,
+    ``graph_data.json``, ``graph_stats.json``). No HTML viewer is generated:
+    the interactive Docling/Cytoscape page was unusable in a browser (90+ MB
+    single file), so ``graph.db`` plus the ``cypher`` tool are the supported
+    way to explore the graph.
     """
     out_dir = step_dir(root, "processed") / "graph-docling"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -626,41 +627,9 @@ def export_docling_graph(
         encoding="utf-8",
     )
 
-    html_path = _build_official_visualization(combined, out_dir / "visualization.html")
     return {
         "nodes": nodes_path,
         "edges": edges_path,
         "stats": stats_path,
         "graph_data": combined,
-        "visualization": html_path,
     }
-
-
-def _build_official_visualization(
-    graph_data: Path, output: Path
-) -> Path | None:
-    """Build the interactive Cytoscape HTML with Docling-Graph.
-
-    ``docling-graph`` is a declared dependency of the ``ocr`` extra (installed
-    by the indexer). If it is genuinely absent, the index still builds — only
-    the visualization is skipped, with a clear warning.
-    """
-    try:
-        from docling_graph.core.visualizers import InteractiveVisualizer
-    except ImportError as ex:
-        log.warning(
-            "docling-graph nu este instalat; vizualizarea grafului nu a fost "
-            f"generata. Instaleaza extra-ul 'ocr'. ({ex})"
-        )
-        return None
-    try:
-        result = InteractiveVisualizer().display_cytoscape_graph(
-            path=graph_data,
-            input_format="json",
-            output_path=output,
-            open_browser=False,
-        )
-        return Path(result) if result else (output if output.exists() else None)
-    except Exception as ex:  # pragma: no cover - depends on the optional package
-        log.warning(f"Vizualizatorul Docling-Graph nu a putut genera HTML: {ex}")
-        return None

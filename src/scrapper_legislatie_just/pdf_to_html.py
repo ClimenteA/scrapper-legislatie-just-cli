@@ -2,10 +2,19 @@
 
 Docling PDF conversion is by far the slowest part of a rebuild. This module
 runs it **once per file version** and writes the result as a regular clean HTML
-document, using the same semantic tags and ``S_*`` classes produced by
-``LegislatieJustCleaner``. From that point on a PDF is just another HTML source:
-the expand step copies it into ``3-expanded``, the processor parses it with the
-regular ``_parse_document`` path and no Docling call happens during a rebuild.
+document. From that point on a PDF is just another HTML source: the expand step
+copies it into ``3-expanded``, the processor parses it with the regular
+``_parse_document`` path and no Docling call happens during a rebuild.
+
+The two PDF families have different shapes, so they are rendered differently:
+
+* ANAF declarations (``declaratii-pdf``) are mostly forms/tables. Docling's
+  Markdown export is wrapped verbatim in one ``<pre class="S_PRE">`` — the same
+  representation the cleaner produces for the ASCII tables embedded in
+  legislatie.just.ro forms. The monospace block keeps columns aligned and makes
+  the Markdown export emit a fenced code block instead of a fake table.
+* EU acts (``eu-pdfs``) share the structure of the legislative HTML, so they
+  keep the full semantic rendering (``S_*`` classes, headings and anchors).
 
 A small cache manifest next to the generated files records the source hash, so
 re-running the step skips PDFs that have not changed (``force=True`` overrides).
@@ -27,6 +36,9 @@ from .sources import Sursa
 PDF_DATE = "2000-01-01"
 PDF_NUMBER_BASE = 9_000_000
 CACHE_FILENAME = ".pdf-html-cache.json"
+# Mark declaratiile rendered as Markdown-inside-<pre> so old semantic-HTML
+# cache entries are regenerated once after this format change.
+CACHE_FORMAT_PRE = "markdown-pre"
 
 # (tag, class, label tag, label class) for every node kind the PDF converter
 # can emit. Structural kinds carry their text in a *_TTL label; content kinds
@@ -149,19 +161,9 @@ def _render_node(node: Any, children: dict[str, list[Any]]) -> str:
     return f"<{tag}{attrs}>{inner}</{tag}>"
 
 
-def render_pdf_html(descriptor: dict[str, Any], nodes: list[Any]) -> str:
-    """Render converter nodes as a clean, semantic HTML document."""
+def _render_clean_shell(descriptor: dict[str, Any], body: str) -> str:
+    """Wrap rendered content in the standard 2-clean HTML shell."""
     from .cleaner import HEAD_LINKS, STYLES_CSS
-
-    children: dict[str, list[Any]] = {}
-    roots: list[Any] = []
-    for node in nodes:
-        if node.parent:
-            children.setdefault(node.parent, []).append(node)
-        else:
-            roots.append(node)
-
-    body = "".join(_render_node(node, children) for node in roots)
 
     title = html.escape(descriptor["title"])
     description = html.escape(descriptor.get("description") or "")
@@ -184,6 +186,39 @@ def render_pdf_html(descriptor: dict[str, Any], nodes: list[Any]) -> str:
         f"<title>{title}</title>{HEAD_LINKS}<style>{STYLES_CSS}</style>"
         f"</head><body>{cover}{body}</body></html>\n"
     )
+
+
+def render_pdf_html(descriptor: dict[str, Any], nodes: list[Any]) -> str:
+    """Render converter nodes as a clean, semantic HTML document (EU acts)."""
+    children: dict[str, list[Any]] = {}
+    roots: list[Any] = []
+    for node in nodes:
+        if node.parent:
+            children.setdefault(node.parent, []).append(node)
+        else:
+            roots.append(node)
+
+    body = "".join(_render_node(node, children) for node in roots)
+    return _render_clean_shell(descriptor, body)
+
+
+def render_pdf_markdown_html(descriptor: dict[str, Any], markdown: str) -> str:
+    """Render a form PDF as Docling Markdown inside a single ``S_PRE`` block.
+
+    Mirrors how the cleaner stores the ASCII tables of legislatie.just.ro
+    forms: one ``<pre class="S_PRE">`` per document, with an anchor so the
+    processor indexes the whole text as one ``preformatat`` node.
+    """
+    text = (
+        "\n".join(
+            line.rstrip()
+            for line in markdown.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+        ).strip("\n")
+    )
+    if not text.strip():
+        text = descriptor.get("description") or descriptor["title"]
+    body = f'<pre class="S_PRE" id="s_pre_1">{html.escape(text, quote=False)}</pre>'
+    return _render_clean_shell(descriptor, body)
 
 
 def _manifest_path(clean_dir: Path) -> Path:
@@ -237,10 +272,15 @@ def convert_pdfs_to_clean_html(
         meta_hash = _meta_hash(descriptor)
         target = clean_dir / descriptor["html_name"]
         cached = manifest.get(slug, {})
+        # Declaratiile are Markdown in <pre>; EU acts keep semantic HTML. A
+        # format change must invalidate an otherwise fresh cache entry.
+        is_form = descriptor["kind"] == "declaratie"
+        expected_format = CACHE_FORMAT_PRE if is_form else None
         fresh = (
             cached.get("file_hash") == file_hash
             and cached.get("meta_hash") == meta_hash
             and cached.get("html_name") == descriptor["html_name"]
+            and cached.get("format") == expected_format
             and target.exists()
         )
         if fresh and not force:
@@ -254,20 +294,28 @@ def convert_pdfs_to_clean_html(
             except Exception as ex:  # a broken PDF must not kill the reindex
                 log.warning(f"[0-pdfs] Nu pot converti {descriptor['source_path']}: {ex}")
                 continue
-            nodes = pdf_ingest.convert_pdf_to_graph_nodes(
-                docling_doc,
-                slug=slug,
-                version=str(descriptor["version"]),
-                title=descriptor["title"],
-                html_rel="",
-            )
-            target.write_text(render_pdf_html(descriptor, nodes), encoding="utf-8")
+            if is_form:
+                markdown = docling_doc.export_to_markdown()
+                target.write_text(
+                    render_pdf_markdown_html(descriptor, markdown), encoding="utf-8"
+                )
+            else:
+                nodes = pdf_ingest.convert_pdf_to_graph_nodes(
+                    docling_doc,
+                    slug=slug,
+                    version=str(descriptor["version"]),
+                    title=descriptor["title"],
+                    html_rel="",
+                )
+                target.write_text(render_pdf_html(descriptor, nodes), encoding="utf-8")
             manifest[slug] = {
                 "file_hash": file_hash,
                 "meta_hash": meta_hash,
                 "html_name": descriptor["html_name"],
                 "source_path": descriptor["source_path"].resolve().as_posix(),
             }
+            if is_form:
+                manifest[slug]["format"] = CACHE_FORMAT_PRE
             converted += 1
             log.info(f"[0-pdfs] HTML creat: {target.name}")
 

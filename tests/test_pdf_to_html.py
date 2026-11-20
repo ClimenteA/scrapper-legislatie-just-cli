@@ -23,7 +23,13 @@ class _Item:
         self.prov = [_Prov(page)]
 
 
+MARKDOWN = "# Decont de TVA\n\n| Camp | Valoare |\n| --- | --- |\n| Total | 100 |\n"
+
+
 class _Doc:
+    def export_to_markdown(self):
+        return MARKDOWN
+
     def iterate_items(self):
         return iter(
             [
@@ -84,15 +90,31 @@ def test_convert_writes_clean_html_once(tmp_path: Path, monkeypatch):
     clean_dir = step_dir(data, "clean")
     files = sorted(clean_dir.glob("*.html"))
     assert len(files) == 2
-    html_text = next(
-        path.read_text(encoding="utf-8") for path in files if "declaratie-300" in path.name
+    declaration_html = next(
+        path.read_text(encoding="utf-8")
+        for path in files
+        if "declaratie-300" in path.name
     )
-    soup = BeautifulSoup(html_text, "html.parser")
-    assert soup.find("article", class_="S_ART") is not None
-    assert soup.find("h3", class_="S_ART_TTL") is not None
-    assert soup.find("section", class_="S_CAP") is not None
-    assert soup.find("li", class_="S_ALN") is not None
-    anchor = soup.find("article", class_="S_ART")["id"]
+    soup = BeautifulSoup(declaration_html, "html.parser")
+    # ANAF forms are Markdown wrapped in one S_PRE, not semantic HTML nodes.
+    pre = soup.find("pre", class_="S_PRE")
+    assert pre is not None and pre["id"] == "s_pre_1"
+    assert MARKDOWN.strip() == pre.get_text()
+    assert soup.find("article", class_="S_ART") is None
+    assert soup.find("header", class_="S_BOOK_COVER") is not None
+
+    # EU acts keep the full semantic rendering.
+    eu_html = next(
+        path.read_text(encoding="utf-8")
+        for path in files
+        if "ue-regulamentul" in path.name
+    )
+    eu_soup = BeautifulSoup(eu_html, "html.parser")
+    assert eu_soup.find("article", class_="S_ART") is not None
+    assert eu_soup.find("h3", class_="S_ART_TTL") is not None
+    assert eu_soup.find("section", class_="S_CAP") is not None
+    assert eu_soup.find("li", class_="S_ALN") is not None
+    anchor = eu_soup.find("article", class_="S_ART")["id"]
     assert anchor.startswith("p2_g")
 
     # The served PDFs still exist for the actions tool.
@@ -106,6 +128,25 @@ def test_convert_writes_clean_html_once(tmp_path: Path, monkeypatch):
     again = pdf_to_html.convert_pdfs_to_clean_html(data, sources_dir=sources)
     assert again["converted"] == 0
     assert again["skipped"] == 2
+
+
+def test_old_declaration_cache_is_regenerated(tmp_path: Path, monkeypatch):
+    sources = _sources(tmp_path)
+    data = tmp_path / "data"
+    monkeypatch.setattr(pdf_ingest, "_docling_document", lambda path, ocr=False: _Doc())
+    pdf_to_html.convert_pdfs_to_clean_html(data, sources_dir=sources)
+
+    # Simulate a cache written before declaratiile became Markdown-in-<pre>.
+    manifest_path = step_dir(data, "clean") / pdf_to_html.CACHE_FILENAME
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    del manifest["declaratie-300"]["format"]
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    result = pdf_to_html.convert_pdfs_to_clean_html(data, sources_dir=sources)
+    assert result["converted"] == 1  # only the declaration is redone
+    assert result["skipped"] == 1  # the EU act cache stays valid
+    new_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert new_manifest["declaratie-300"]["format"] == pdf_to_html.CACHE_FORMAT_PRE
 
 
 def test_force_reconverts(tmp_path: Path, monkeypatch):
@@ -147,29 +188,41 @@ def test_generated_html_is_parseable_by_processor(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(pdf_ingest, "_docling_document", lambda path, ocr=False: _Doc())
     pdf_to_html.convert_pdfs_to_clean_html(data, sources_dir=sources)
 
-    descriptor = next(
-        d for d in pdf_to_html.pdf_descriptors(data, sources) if d["code"] == "300"
-    )
-    html_path = step_dir(data, "clean") / descriptor["html_name"]
-    doc = {
-        "slug": descriptor["slug"],
-        "version": descriptor["date"],
-        "title": descriptor["title"],
-        "description": descriptor["description"],
-        "html_path": html_path,
-        "html_rel": "2-clean/" + descriptor["html_name"],
-        "md_rel": None,
-        "source_url": descriptor.get("source_url"),
-    }
     builder = LegalIndexBuilder(data_dir=data, surse=[])
-    nodes = builder._parse_document(doc, {})
+    descriptors = pdf_to_html.pdf_descriptors(data, sources)
 
-    kinds = [node.kind for node in nodes]
-    assert "document" in kinds
-    assert "articol" in kinds
-    assert "capitol" in kinds
-    assert "alineat" in kinds
-    article = next(node for node in nodes if node.kind == "articol")
+    def parse(descriptor):
+        html_path = step_dir(data, "clean") / descriptor["html_name"]
+        doc = {
+            "slug": descriptor["slug"],
+            "version": descriptor["date"],
+            "title": descriptor["title"],
+            "description": descriptor["description"],
+            "html_path": html_path,
+            "html_rel": "2-clean/" + descriptor["html_name"],
+            "md_rel": None,
+            "source_url": descriptor.get("source_url"),
+        }
+        return builder._parse_document(doc, {})
+
+    declaration = next(d for d in descriptors if d["code"] == "300")
+    decl_nodes = parse(declaration)
+    decl_kinds = [node.kind for node in decl_nodes]
+    assert "document" in decl_kinds
+    assert "preformatat" in decl_kinds
+    assert "articol" not in decl_kinds
+    pre_node = next(node for node in decl_nodes if node.kind == "preformatat")
+    assert "| Camp | Valoare |" in pre_node.text
+    assert pre_node.anchor == "s_pre_1"
+
+    eu_act = next(d for d in descriptors if d["kind"] == "act-ue")
+    eu_nodes = parse(eu_act)
+    eu_kinds = [node.kind for node in eu_nodes]
+    assert "document" in eu_kinds
+    assert "articol" in eu_kinds
+    assert "capitol" in eu_kinds
+    assert "alineat" in eu_kinds
+    article = next(node for node in eu_nodes if node.kind == "articol")
     assert article.number == "3"
 
 
@@ -207,7 +260,11 @@ def test_pdfs_flow_through_expand_and_process_as_html(tmp_path: Path, monkeypatc
         articles = index.connection.execute(
             "SELECT id FROM nodes WHERE kind = 'articol'"
         ).fetchall()
-        assert len(articles) == 2  # one per PDF
+        assert len(articles) == 1  # only the EU act has legal articles
+        form_nodes = index.connection.execute(
+            "SELECT id FROM nodes WHERE kind = 'preformatat'"
+        ).fetchall()
+        assert len(form_nodes) == 1  # the declaration is Markdown in <pre>
     finally:
         index.close()
 

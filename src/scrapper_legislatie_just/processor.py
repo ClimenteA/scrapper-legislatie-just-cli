@@ -373,7 +373,7 @@ class LegalIndexBuilder:
                     ],
                 },
             )
-        graph_files = export_docling_graph(self.root, all_nodes, all_docs)
+        export_docling_graph(self.root, all_nodes, all_docs)
 
         elapsed = round(time.perf_counter() - started, 2)
         self._write_catalog(all_docs, len(all_nodes), refs, elapsed)
@@ -386,11 +386,6 @@ class LegalIndexBuilder:
             "nodes": len(all_nodes),
             "refs": refs,
             "graph_edges": graph_result["edges"],
-            "graph_docling": (
-                str(graph_files["visualization"])
-                if graph_files.get("visualization")
-                else None
-            ),
             "skipped": False,
             "seconds": elapsed,
         }
@@ -1077,7 +1072,7 @@ class LegalIndexBuilder:
             "",
             "Tool-urile puse la dispoziție: `search`, `article`, `show`,",
             "`neighbors`, `context`, `docs`, `cypher`, `convert_currency`,",
-            "`actions`, `answer_template` și `graph_visualization`.",
+            "`actions` și `answer_template`.",
             "",
             "Formatul de răspuns este în `AGENTS-cloud.md` și",
             "`answer-format.md` (ambele regenerate aici la indexare).",

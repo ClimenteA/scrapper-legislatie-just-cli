@@ -1,7 +1,7 @@
 # Legislatie Just — instructiuni pentru modul cloud (MCP prin FastAPI)
 
 Acest server MCP ofera doar tool-uri read-only: cautare in indexul legal,
-declaratii ANAF (fise de actiune), graful Docling si conversie valutara. Nu
+declaratii ANAF (fise de actiune), graful de citari si conversie valutara. Nu
 exista fisiere personale pe server. Indexul este construit prin Docling din
 HTML-urile din `3-expanded` si din PDF-urile din `0-pdfs` (declaratii si
 acte UE), servite la `/pdfs/*`.
@@ -127,7 +127,6 @@ exact asa cum vin din tool.
   descriere, link catre PDF). Foloseste-le in sectiunea ACȚIUNI; nu
   inventa formulare care nu apar aici.
 - `legislatie_answer_template()` — formatul de raspuns obligatoriu.
-- `legislatie_graph_visualization()` — link HTML catre graful Docling.
 
 Linkurile PDF au forma `<radacina>/pdfs/<slug>/<fisier>.pdf#page=N`, unde
 `<radacina>` este `<base_url>` fara sufixul `/laws`. Copiaza-le exact cum vin

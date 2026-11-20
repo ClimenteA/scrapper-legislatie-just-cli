@@ -253,8 +253,6 @@ final in `raspunsuri-ai/`.
 - `legislatie_answer_template()` — intoarce formatul de raspuns obligatoriu.
   Apela-l inainte de a compune raspunsul (mai ales la prompturi cu mai multe
   intrebari) si respecta-l intocmai.
-- `legislatie_graph_visualization()` — link HTML catre graful Docling
-  (nodes/edges), util pentru a intelege structura surselor.
 - `legislatie_save_answer(question, answer, output_dir=None)` — scrie
   raspunsul final in `raspunsuri-ai/<slug>.md` si intoarce linkul `file://`.
   Daca intoarce „Atentionari format”, corecteaza raspunsul si salveaza-l

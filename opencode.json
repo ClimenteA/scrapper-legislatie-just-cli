@@ -9,7 +9,7 @@
         "oauth": false,
         "codemode": false,
         "timeout": 600000,
-        "headers": { "Authorization": "Bearer {env:MCP_API_KEY}" }
+        "headers": { "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZG1pbkB0ZXN0LmNvbSIsImV4cCI6MTc5NjA3NjAwMCwiaWF0IjoxNzk1MTYxOTQ5LCJqdGkiOiI4YTM0YmNkZWU3YTI0NGU5YTRiZmUwMDljY2IxZWZmYSJ9.BkPCYLvCuHrigZsrt27hFN-b-UOenhu5k3Wdb0NC2TI" }
       }
     }
   }

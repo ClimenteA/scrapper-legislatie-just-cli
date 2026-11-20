@@ -19,7 +19,7 @@ RUN curl -fLsS \
 WORKDIR /app
 # Build context is the repository root (see docker-compose.yml), which holds
 # the single package, its scripts and the frozen lockfile. OCR (docling,
-# easyocr, docling-graph) is a required dependency, so there is one image for
+# easyocr) is a required dependency, so there is one image for
 # both the web app and the indexer.
 COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
