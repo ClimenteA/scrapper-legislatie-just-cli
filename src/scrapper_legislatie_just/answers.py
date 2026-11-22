@@ -58,12 +58,24 @@ _DATE_RE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
 _FORM_AS_ARTICLE_RE = re.compile(
     r"\b(decontul|decont|formularul|formular)\s+\d{2,4}\b", re.IGNORECASE
 )
-_FORM_CODE_RE = re.compile(r"\b(?:D\s?\d{3,4}|0\d{2,3}|311)\b", re.IGNORECASE)
-_D311_RE = re.compile(r"\b(?:D?311|declaratia 311|formularul 311)\b", re.IGNORECASE)
-_NORME_LINK_RE = re.compile(r"/3-expanded/norme-metodologice-[^)\s]+#[^)\s]+", re.I)
-_UE_LINK_RE = re.compile(r"/3-expanded/ue-(?:regulamentul|directiva)[^)\s]+#[^)\s]+", re.I)
-_ANULARE_RE = re.compile(r"\b(?:anulat|anularea|inactiv|inactivitate)\b", re.I)
-_ART11_RE = re.compile(r"art\.?\s*11\b", re.I)
+# Generic ANAF form codes: D followed by 3 digits (D300, D311, D390, D406...)
+# or the legacy zero-padded codes (010, 088, 093...). No specific form is
+# hard-coded here; which form applies is decided by the sources, not by us.
+_FORM_CODE_RE = re.compile(r"\b(?:D\s?\d{3,4}|0\d{2,3})\b", re.IGNORECASE)
+_NORME_LINK_RE = re.compile(r"/3-expanded/norme[^)\s]*#[^)\s]+", re.I)
+_UE_LINK_RE = re.compile(
+    r"/3-expanded/ue-[^)\s]+#[^)\s]+|/pdfs/ue-[^)\s]+", re.I
+)
+_INACTIVITY_RE = re.compile(r"\binactiv\w*", re.I)
+_CANCEL_RE = re.compile(
+    r"\banula\w*\b[^.\n]{0,80}\btva\b|\btva\b[^.\n]{0,80}\banula\w*\b", re.I
+)
+_DEDUCTION_RE = re.compile(r"deduc\w*|drept de deducere", re.I)
+_BENEFICIARY_RE = re.compile(r"beneficiar\w*|client\w*", re.I)
+_EXPENSES_RE = re.compile(r"cheltuiel\w*", re.I)
+_NEGATION_RE = re.compile(
+    r"\bnu\b|\bfara\b|\binterzis\w*\b|\bnepermis\w*\b|\bpierd\w*\b", re.I
+)
 
 _LABEL_ALIASES = {
     "intrebare": "INTREBARE",
@@ -211,42 +223,72 @@ def audit_answer(answer: str) -> list[str]:
                 + " fara link PDF returnat de `actions`."
             )
 
-    # Domain guards for the two known problematic scenarios.
+    # Generic process guards. No scenario answers or act/article/form numbers
+    # are encoded here: the checks only enforce the research process (family
+    # coverage, explicit consequences, forms as actions) that a tax adviser
+    # would apply to any question.
     text = strip_diacritics(answer)
     lowered = text.lower()
-    if "vies" in lowered or "neimpozabil" in lowered:
-        if "neimpozabil" in lowered and not _NORME_LINK_RE.search(answer):
+
+    # Family coverage (Gate A): harmonised taxes are governed by the code +
+    # implementing norms + EU acts together; an answer citing only one family
+    # is a search failure regardless of the scenario. Topic detection is the
+    # same generic keyword map used by source selection.
+    from .research import topic_families
+
+    topics, _required = topic_families(text)
+    if "tva" in topics:
+        if not _NORME_LINK_RE.search(answer):
             warnings.append(
-                "Caz VIES: lipseste linkul catre Normele metodologice, pct. (9) "
-                "('poate considera clientul neimpozabil')."
+                "Subiect de TVA fara link catre normele de aplicare: regula "
+                "din cod se aplica impreuna cu normele (Gate A). Daca ai "
+                "cautat si nu exista text, spune explicit."
             )
         if not _UE_LINK_RE.search(answer):
             warnings.append(
-                "Caz VIES: lipseste linkul catre Reg. 282/2011 art. 17/18 sau "
-                "Directiva 2006/112/CE."
-            )
-    if _ANULARE_RE.search(text) and "tva" in lowered:
-        if not _D311_RE.search(text):
-            warnings.append(
-                "Anulare cod TVA: lipseste D311 (declaratia TVA colectata datorata "
-                "de persoanele cu codul anulat) din sectiunea ACTIUNI."
-            )
-        if not _ART11_RE.search(text):
-            warnings.append(
-                "Anulare cod TVA: lipseste citarea art. 11 alin. (6)/(7) privind "
-                "nededucerea cheltuielilor si a TVA."
+                "Subiect de TVA fara link catre un act al Uniunii: TVA este "
+                "armonizata, regulamentul/directiva UE se aplica direct "
+                "(Gate A). Daca ai cautat si nu exista text, spune explicit."
             )
 
-    # Generic process guard: a tax answer drawn from a single source family is
-    # a search failure regardless of the scenario. No act/article/form number
-    # is encoded here — the check only requires family diversity (Gate A).
-    if "tva" in lowered and not (
-        _NORME_LINK_RE.search(answer) or _UE_LINK_RE.search(answer)
-    ):
-        warnings.append(
-            "Subiect de TVA cu o singura familie de surse: lipseste un link "
-            "catre normele de aplicare sau catre un act al Uniunii (Gate A)."
-        )
+    # Status-change scenarios (cancellation/inactivity) have consequences for
+    # both sides of the transaction and a special filing regime. Require the
+    # answer to address them; which article/form applies comes from the
+    # sources, not from this audit.
+    if (_INACTIVITY_RE.search(text) or _CANCEL_RE.search(text)) and "tva" in lowered:
+        actions = bodies.get("ACTIUNI", "")
+        if not (_FORM_CODE_RE.search(actions) and "/pdfs/" in actions):
+            warnings.append(
+                "Anulare cod TVA/inactivitate cu activitate: ACTIUNI nu "
+                "citeaza niciun formular ANAF cu link PDF din `actions`. "
+                "Cauta in actions declaratia pentru taxa colectata in "
+                "perioada cu codul anulat si precizeaza termenul de depunere."
+            )
+        if not _DEDUCTION_RE.search(text):
+            warnings.append(
+                "Anulare cod TVA/inactivitate: raspunsul nu spune nimic "
+                "despre dreptul de deducere in perioada respectiva. Verifica "
+                "in surse regimul deducerii TVA si al cheltuielilor."
+            )
+        else:
+            if not _EXPENSES_RE.search(text):
+                warnings.append(
+                    "Anulare cod TVA/inactivitate: se mentioneaza deducerea "
+                    "TVA, dar nu si deductibilitatea cheltuielilor (impozit "
+                    "pe profit/venit). Ambele efecte trebuie tratate, cu sursa."
+                )
+            if not _BENEFICIARY_RE.search(text):
+                warnings.append(
+                    "Anulare cod TVA/inactivitate: lipsesc efectele pentru "
+                    "beneficiarii/clientii entitatii (deducerea TVA si a "
+                    "cheltuielilor aferente achizitiilor de la ea)."
+                )
+            if not _NEGATION_RE.search(text):
+                warnings.append(
+                    "Anulare cod TVA/inactivitate: efectele asupra deducerii "
+                    "trebuie spuse explicit (cine NU poate deduce ce), nu "
+                    "doar prin trimitere la articol."
+                )
 
     return list(dict.fromkeys(warnings))
 

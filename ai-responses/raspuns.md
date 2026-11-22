@@ -1,0 +1,72 @@
+INTREBARE
+Daca am un PFA, si pe PFA facturez servicii pentru o firma din UE, iar acea firma nu imi comunica un cod valid de inregistrare in scopuri de TVA verificabil in VIES, atunci trebuie sa il tratez ca o persoana fizica (persoana neimpozabila), sau statutul de persoana impozabila nu depinde de inregistrarea in scopuri de TVA? Iar inainte de a factura mai trebuie sa fac ceva? Si cum trebuie sa facturez TVA pe factura emisa, iar valoarea facturata se ia in calculul plafonului pentru neplatitorii de TVA? Multumesc.
+Intrebarea 1 — Beneficiarul UE fara cod VIES: persoana neimpozabila? Statutul depinde de inregistrarea in TVA?
+TL;DR
+Nu, statutul de persoana impozabila nu depinde de inregistrarea in scopuri de TVA; dar, daca firma din UE nu iti comunica un cod de TVA si nu ai informatii contrare, normele iti permit sa o tratezi prezumtiv ca persoana neimpozabila, ceea ce muta locul prestarii in Romania.
+TEMEI LEGAL
+- Conform Codul fiscal, art. 269 alin. (1) — este persoana impozabila orice persoana care desfasoara, de o maniera independenta si indiferent de loc, activitati economice, oricare ar fi scopul sau rezultatul; textul nu conditioneaza statutul de inregistrarea in scopuri de TVA.
+- Conform Normelor metodologice, pct. 14 alin. (1) — pentru locul prestarii se are in vedere notiunea de persoana impozabila din punctul de vedere al TVA; faptul ca persoana aplica regimul special de scutire sau realizeaza operatiuni scutite nu influenteaza regulile locului prestarii.
+- Conform Normelor metodologice, pct. 15 alin. (8) — pentru serviciile din art. 278 alin. (2) prestate catre un beneficiar din alt stat membru, prestatorul trebuie sa faca dovada ca beneficiarul este persoana impozabila stabilit in UE: prin codul de TVA comunicat si confirmat ca valid (lit. a), sau, daca clientul nu a primit inca un cod dar te informeaza ca a depus cerere, prin orice alta dovada + verificare la un nivel rezonabil (lit. b).
+- Conform Normelor metodologice, pct. 15 alin. (9) — daca nu dispune de informatii contrare, prestatorul POATE considera clientul stabilit in UE persoana neimpozabila atunci cand demonstreaza ca acel client nu i-a comunicat codul sau individual de inregistrare in scopuri de TVA. Aceasta este exact situatia ta: e o prezumtie permisiva, nu o obligatie si nu o transformare a statutului real.
+- Conform Regulamentului (UE) nr. 282/2011, art. 18 si art. 18 alin. (2) — aceleasi reguli, direct aplicabile: prezumtie de persoana impozabila la cod comunicat si confirmat; prezumtie de persoana neimpozabila cand clientul nu a comunicat codul, daca nu exista informatii contrare.
+- Conform Normelor metodologice, pct. 15 alin. (10) si Regulamentului (UE) nr. 282/2011, art. 19 — comunicarea codului creeaza si prezumtia ca serviciile sunt destinate activitatii economice a clientului; un client care primeste servicii exclusiv pentru uz privat este considerat persoana neimpozabila chiar daca are cod.
+Exceptii / atentionari
+- Prezumtia e rasturnabila: „daca nu dispune de informatii contrare" — daca din contract, natura serviciului sau alte documente rezulta ca beneficiarul desfasoara activitate economica, nu te poti baza automat pe lipsa codului pentru a-l trata ca neimpozabil (norme, pct. 15 alin. (9)).
+- Dovada alternativa are conditii: lit. b) a normelor, pct. 15 alin. (8) se aplica doar cand clientul te informeaza ca a depus cerere de cod; nu inlocuieste conditia din text cu orice „dovada echivalenta".
+- Servicii telecom/radio-TV/electronice: pentru acestea, prestatorul poate considera clientul din alt stat membru neimpozabil cat timp nu a comunicat codul, indiferent de informatii contrare (norme, pct. 15 alin. (9)).
+ACȚIUNI
+- Inainte de a stabili tratamentul, cere clientului codul de TVA si verifica-l; daca nu il comunica, pastreaza dovada acestei situatii (corespondenta, contract) si documenteaza daca ai sau nu informatii contrare despre activitatea lui economica — acestea sunt conditiile de proba din norme, pct. 15 alin. (8)–(9). Nu exista un formular ANAF pentru acest pas; sursa nu prevede unul.
+Intrebarea 2 — Ce trebuie facut inainte de a factura?
+TL;DR
+Depinde: daca serviciul este B2B (locul prestarii in statul membru al beneficiarului, care e obligat la plata taxei), trebuie sa soliciti inregistrarea in scopuri de TVA conform art. 317 INAINTE de prestarea serviciului; daca il tratezi ca B2C (locul prestarii in Romania, sub plafonul de scutire), nu ai obligatia acestei inregistrari.
+TEMEI LEGAL
+- Conform Codul fiscal, art. 317 alin. (1) lit. b) — persoana impozabila cu sediul in Romania, neinregistrata, care nu are obligatia sa se inregistreze conform art. 316, are obligatia sa solicite inregistrarea daca presteaza servicii care au locul in alt stat membru, pentru care beneficiarul este persoana obligata la plata taxei conform echivalentului din legislatia acelui stat al art. 307 alin. (2), inainte de prestarea serviciului.
+- Conform Codul fiscal, art. 317 alin. (10) — acest cod nu confera calitatea de persoana inregistrata normal in scopuri de TVA; se utilizeaza numai pentru operatiunile prevazute la art. 317 (deci ramai neplatitor pentru activitatea din Romania).
+- Conform Normelor metodologice, pct. 90 alin. (4) — inregistrarea conform art. 317 alin. (1) lit. b) se solicita numai pentru servicii intracomunitare din art. 278 alin. (2), altele decat cele scutite; NU solicita inregistrarea persoanele care realizeaza servicii din art. 278 alin. (3)–(7) — deci pentru prestarea tratata ca B2C, cu locul in Romania, nu este necesara.
+- Conform Normelor metodologice, pct. 90 alin. (2) — inregistrarea conform art. 317 este considerata valabila de la data solicitarii inregistrarii.
+- Conform Codul fiscal, art. 317 alin. (4) — daca nu soliciti inregistrarea desi esti obligat, organele fiscale te vor inregistra din oficiu.
+- Conform Codul fiscal, art. 325 alin. (1) lit. c) — dupa inregistrare, prestarile de servicii din art. 278 alin. (2) catre persoane impozabile stabilite in UE (altele decat cele scutite in statul unde sunt impozabile) se declara in declaratia recapitulativa, pentru luna in care ia nastere exigibilitatea.
+Exceptii / atentionari
+- Exceptie de la obligatia de inregistrare: serviciile scutite de taxa si cele care intra sub art. 278 alin. (3)–(7) nu necesita cod conform art. 317 (norme, pct. 90 alin. (4)).
+- Regimul de scutire ramane: efectuarea de operatiuni cu locul prestarii in strainatate nu te scoate din regimul special de scutire pentru intreprinderi mici (norme, pct. 83 alin. (1)).
+ACȚIUNI
+1. Daca tratezi operatiunea ca B2B: solicita inregistrarea conform art. 317 la organul fiscal competent, inainte de prestare (Codul fiscal, art. 317 alin. (1) lit. b)). Pentru persoanele fizice care desfasoara activitati independente, declaratiile de inregistrare/modificare a obligatiilor fiscale din corpus sunt D700 si D070; normele indexate nu numesc expres formularul pentru inregistrarea PFA conform art. 317, asa ca verifica la ANAF care dintre ele se foloseste in cazul tau — nu am o sursa care sa desemneze explicit formularul.
+2. Lunar, pentru lunile in care ia nastere exigibilitatea, depune declaratia recapitulativa D390 — conform descrierii din fisa de actiune, se depune lunar pana la data de 25 inclusiv a lunii urmatoare, de persoanele inregistrate conform art. 316 sau 317; temeiul legal este Codul fiscal, art. 325.
+3. Daca tratezi operatiunea ca B2C cu locul in Romania: nu este necesara inregistrarea conform art. 317 (norme, pct. 90 alin. (4)), dar facturile emise catre persoane neimpozabile cu locul prestarii in Romania se transmit in RO e-Factura (OUG 120/2021, art. 10^1 alin. (2)).
+Intrebarea 3 — Cum facturezi TVA pe factura emisa?
+TL;DR
+Depinde de tratamentul beneficiarului: daca e B2B, facturezi fara TVA, cu mentiunea „taxare inversa" si codul de TVA al beneficiarului (locul prestarii e in statul lui); daca e tratat ca neimpozabil (B2C), locul prestarii e in Romania si facturezi fara TVA in regimul de scutire, cu mentiunea scutirii — in niciun caz nu inscrii o suma de TVA pe factura.
+TEMEI LEGAL
+- Conform Codul fiscal, art. 278 alin. (2) — serviciile catre o persoana impozabila care actioneaza ca atare au locul prestarii la sediul activitatii economice a beneficiarului (deci in statul membru UE, nu in Romania).
+- Conform Codul fiscal, art. 319 alin. (5) lit. b) pct. 1 — pentru prestatorul stabilit in Romania, cand locul prestarii e in alt stat membru si beneficiarul e persoana obligata la plata TVA, facturarea face obiectul art. 319 din Codul fiscal roman.
+- Conform Codul fiscal, art. 319 alin. (20) lit. m) — cand clientul este persoana obligata la plata TVA, factura trebuie sa contina mentiunea „taxare inversa"; iar conform art. 319 alin. (20) lit. f) — factura trebuie sa contina denumirea/numele si adresa beneficiarului, precum si codul lui de inregistrare in scopuri de TVA sau codul de identificare fiscala, daca e persoana impozabila.
+- Conform Codul fiscal, art. 278 alin. (3) — serviciile catre o persoana neimpozabila au locul prestarii la sediul prestatorului (Romania); sub plafon, operatiunea e scutita conform art. 310 alin. (1).
+- Conform Codul fiscal, art. 310 alin. (10) lit. b) — persoana care aplica regimul special de scutire nu are voie sa mentioneze taxa pe factura sau pe alt document; conform art. 319 alin. (20) lit. l) — cand e aplicabila o scutire, factura contine trimiterea la dispozitiile aplicabile sau orice alta mentiune din care rezulta scutirea.
+- Conform Codul fiscal, art. 319 alin. (16) — factura se emite cel tarziu pana in cea de-a 15-a zi a lunii urmatoare celei in care ia nastere faptul generator al taxei (si pentru avansuri, de la incasare).
+Exceptii / atentionari
+- TVA mentionata eronat: daca ai facturat cu taxa o operatiune scutita conform art. 310, esti obligat sa stornezi factura si sa emiti una fara taxa; beneficiarul nu are drept de deducere/rambursare a taxei aplicate eronat (norme, pct. 83 alin. (15)).
+- Facturi simplificate: nu se pot emite pentru prestari pentru care taxa e datorata in alt stat membru unde prestatorul nu e stabilit, iar beneficiarul e obligat la plata (Codul fiscal, art. 319 alin. (14)).
+- Exceptii de la locul prestarii: regulile generale din art. 278 alin. (2)–(3) se aplica doar daca serviciul nu intra in exceptiile de la art. 278 alin. (4)–(7) (imobile, transport, evenimente etc.); exceptia prevaleaza intotdeauna (norme, pct. 15 alin. (1)).
+ACȚIUNI
+1. Emite factura pana la data de 15 a lunii urmatoare faptului generator (Codul fiscal, art. 319 alin. (16)), cu elementele de mai sus, in functie de tratament.
+2. RO e-Factura: obligatia din art. 10 alin. (1) OUG 120/2021 vizeaza relatia B2B intre persoane impozabile stabilite in Romania, pentru operatiuni cu locul prestarii in Romania; pentru serviciul B2B cu locul in alt stat membru, textul nu prevede transmiterea in SPV. Pentru varianta B2C (beneficiar neimpozabil, loc in Romania), transmiterea in RO e-Factura este obligatorie de la 1 ianuarie 2025, indiferent de inregistrarea in scopuri de TVA (art. 10^1 alin. (2)); relatia B2C este definita ca tranzactia cu o persoana neimpozabila (art. 2 alin. (1) lit. n^1)). Nota: pentru prestatorii identificati prin CNP a existat o derogare pana la 1 iunie 2026 (nota din OUG 120/2021, art. IX din OG 6/2026) — la data curenta aceasta a expirat.
+Intrebarea 4 — Valoarea facturata intra in plafonul de scutire (neplatitori de TVA)?
+TL;DR
+Depinde: daca serviciul e B2B cu locul prestarii in statul beneficiarului, valoarea facturata NU se include in plafonul de scutire de 395.000 lei (se numara doar operatiunile cu locul in Romania); daca beneficiarul e tratat ca neimpozabil si locul prestarii e in Romania, valoarea SE include, inclusiv facturile de avans.
+TEMEI LEGAL
+- Conform Codul fiscal, art. 310 alin. (1) — plafonul regimului special de scutire este de 395.000 lei cifra de afaceri anuala.
+- Conform Codul fiscal, art. 310 alin. (2) — cifra de afaceri de referinta este constituita din livrarile/prestarile taxabile (sau care ar fi taxabile daca nu ar fi efectuate de o mica intreprindere), operatiunile scutite cu drept de deducere si anumite operatiuni scutite fara drept de deducere neaccesorii, „cu locul in Romania" — conditie explicita care lasa in afara plafonului prestarile cu locul in alt stat membru.
+- Conform Normelor metodologice, pct. 83 alin. (3) — la determinarea cifrei de afaceri se cuprind inclusiv facturile emise pentru avansuri incasate sau neincasate si alte facturi emise inainte de livrare/prestare, pentru operatiunile prevazute la art. 310 alin. (2).
+- Conform Codul fiscal, art. 310 alin. (6) — la depasirea plafonului trebuie solicitata inregistrarea conform art. 316 cel tarziu la data depasirii; regimul normal de taxare se aplica din data depasirii, incepand cu tranzactia care conduce la depasire.
+Exceptii / atentionari
+- Exceptie expresa: nu se cuprind in cifra de afaceri livrarile de active fixe corporale si cesiunea/transferul de active necorporale (Codul fiscal, art. 310 alin. (2)).
+- Operatiunile cu locul in strainatate nu te scot din regimul de scutire, dar nici nu consuma plafonul: persoana care realizeaza astfel de operatiuni (cu taxa deductibila daca ar fi fost in Romania) se considera ca aplica regimul special de scutire daca nu solicita inregistrarea conform art. 316 (norme, pct. 83 alin. (1)).
+- Atentie la tratament: daca beneficiarul fara cod VIES e tratat ca neimpozabil (Intrebarea 1), locul prestarii devine Romania (Codul fiscal, art. 278 alin. (3)) si aceleasi facturi INTRA in plafon — tratamentul beneficiarului schimba direct calculul plafonului.
+ACȚIUNI
+1. Tine evidenta distincta a prestarilor cu locul in Romania (care consuma plafonul) fata de cele cu locul in alt stat membru (care nu il consuma), pe baza art. 310 alin. (2).
+2. Daca cifra de afaceri astfel calculata depaseste 395.000 lei, solicita inregistrarea in scopuri de TVA conform art. 316 cel tarziu la data depasirii (art. 310 alin. (6)); pentru modificarea obligatiilor fiscale declarative, corpusul contine D700 si D070.
+Sursa si versiunea
+Versiuni consolidate: Codul fiscal — 2026-10-25; Norme metodologice — 2026-03-31; OUG 120/2021 (e-Factura) — 2026-06-01; Regulamentul (UE) nr. 282/2011 — versiunea indexata (2000-01-01, act UE). Linkurile se deschid in HTML-ul publicat.
+
+
+Build · Qwen4 Max (Free) · 32m 24s · 60.7 tok/s

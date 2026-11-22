@@ -138,6 +138,8 @@ def test_hosted_endpoints():
             "neighbors",
             "context",
             "docs",
+            "select_docs",
+            "research",
             "cypher",
             "convert_currency",
             "actions",

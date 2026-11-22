@@ -71,16 +71,19 @@ def _anticipated_failure(fn: Callable[..., str]) -> Callable[..., str]:
 mcp = MCPServer(
     SERVER_NAME,
     instructions=(
-        "Index legislativ romanesc. Cauta mai intai cu search/context, "
-        "citeste articolul cu article, verifica exceptiile cu neighbors/show "
-        "si citeaza linkurile HTTPS returnate. Pentru TVA verifica intotdeauna "
-        "Codul fiscal + Normele metodologice + actele UE + formularele din "
-        "actions. Regula VIES: clientul care nu a comunicat codul poate fi "
-        "considerat neimpozabil conform Normelor metodologice pct. (9), nu "
-        "pe baza unui certificat de inregistrare. Un numar de articol nu este "
-        "cod de formular (nu exista 'decontul 323'). Anularea codului de TVA "
-        "impune D311 si art. 11 alin. (6)/(7). Da concluzia directa in fiecare "
-        "TL;DR, descompune intrebarile multiple si finalizeaza cu "
+        "Index legislativ romanesc. Proces de cercetare: (1) select_docs sau "
+        "research(question) filtreaza catalogul pe familii de surse (coduri, "
+        "norme de aplicare, acte UE, formulare) si aduce dovezi din fiecare; "
+        "un subiect fiscal nu se rezolva dintr-o singura familie. (2) Citeste "
+        "textul cu article/show, nu doar titlul; cauta pana gasesti pasajul "
+        "care trateaza cazul concret, cu sinonime si search(doc=...). "
+        "(3) Urmareste trimiterile cu neighbors pentru exceptii si exceptii "
+        "de la exceptii, inclusiv intre acte. (4) Orice 'nu se aplica/nu se "
+        "include' are nevoie de text explicit de excludere. (5) Formularele "
+        "vin doar din actions, cu link PDF; un numar de articol nu este cod "
+        "de formular. (6) Raspunde cu concluzia directa (da/nu/depinde + ce "
+        "faci) in fiecare TL;DR, citeaza linkurile HTTPS exacte returnate, "
+        "descompune intrebarile multiple si finalizeaza cu "
         "validate_answer(answer)."
     ),
 )
@@ -144,10 +147,37 @@ def context(question: str, limit: int = 4, doc: str | None = None) -> str:
 
 
 @mcp.tool()
-def docs() -> str:
-    """Lista actelor indexate, cu data consolidarii."""
+def docs(all_versions: bool = False) -> str:
+    """Catalogul actelor indexate, grupat pe familii de surse, cu descrierea fiecarui act si data consolidarii. Foloseste descrierile pentru a decide ce acte/familii trebuie cautate."""
     with _index() as index:
-        return strip_diacritics(format_docs(index.docs()))
+        return strip_diacritics(
+            format_docs(index.docs(latest_only=not all_versions))
+        )
+
+
+@mcp.tool()
+def select_docs(question: str, max_docs: int = 12) -> str:
+    """Filtreaza catalogul pentru o intrebare: acte relevante dupa descriere/titlu, cu garantarea familiilor obligatorii (norme de aplicare, acte UE pentru taxe armonizate). Punct de plecare inainte de cautarea in text."""
+    with _index() as index:
+        from scrapper_legislatie_just.formatting import format_selection
+
+        plan = index.select_docs(
+            strip_diacritics(question), max_docs=max(4, min(max_docs, 20))
+        )
+        return strip_diacritics(format_selection(plan))
+
+
+@mcp.tool()
+def research(question: str, limit: int = 3, max_docs: int = 10) -> str:
+    """Cercetare completa intr-un singur apel: selecteaza actele pe familii, cauta textul in fiecare, aduce pasajele cu ancora exacta + trimiterile catre exceptii si raporteaza familiile fara dovezi. Completeaza apoi cu search(doc=...)/article/neighbors."""
+    with _index() as index:
+        return strip_diacritics(
+            index.research(
+                strip_diacritics(question),
+                limit=max(1, min(limit, 6)),
+                max_docs=max(4, min(max_docs, 16)),
+            )
+        )
 
 
 @mcp.tool()

@@ -786,14 +786,18 @@ class LegalIndex:
             "incoming": convert(query("incoming")),
         }
 
-    def docs(self) -> list[dict[str, Any]]:
+    def docs(self, latest_only: bool = True) -> list[dict[str, Any]]:
+        from .research import classify_family
+
         rows = self.connection.execute(
             """
             SELECT slug, version, title, description, html_rel, source_url,
                    consolidation_date, is_latest
             FROM docs
+            WHERE (? = 0 OR is_latest = 1)
             ORDER BY slug, is_latest DESC, version DESC
-            """
+            """,
+            (int(latest_only),),
         ).fetchall()
         return [
             {
@@ -805,9 +809,327 @@ class LegalIndex:
                 "source_url": row["source_url"],
                 "date": row["consolidation_date"],
                 "is_latest": bool(row["is_latest"]),
+                "family": classify_family(row["slug"], row["title"] or ""),
             }
             for row in rows
         ]
+
+    # ---------------------------------------------------------------- research
+    def _doc_has_terms(self, question: str, slug: str) -> bool:
+        """Cheap existence probe: does the act contain the question's terms?
+
+        The full ranked search scans every matching node; this probe stops
+        at the first row, which keeps per-family research fast on large acts.
+        Common words ("cod", "inregistrare") occur in every act, so the probe
+        uses the rarer half of the question's vocabulary: an act that contains
+        at least one specific concept is worth the full search, while
+        boilerplate-only acts are skipped. The rarest words may be
+        question-specific ("VIES") and absent everywhere, hence several
+        probes instead of one.
+        """
+        parts = _query_tokens(question)
+        if not parts:
+            return False
+        total = self.connection.execute(
+            "SELECT count(*) FROM nodes"
+        ).fetchone()[0]
+        weighted: list[tuple[float, str]] = []
+        for _token, stem in parts:
+            term = _fts_term(stem)
+            try:
+                df = self.connection.execute(
+                    "SELECT count(*) FROM nodes_fts WHERE nodes_fts MATCH ?",
+                    (term,),
+                ).fetchone()[0]
+            except sqlite3.OperationalError:
+                df = 0
+            if df:
+                weighted.append((math.log(1.0 + total / df), term))
+        if not weighted:
+            return False
+        weighted.sort(key=lambda item: -item[0])
+        # Common words ("cod", "taxa") occur in every act, so the probe uses
+        # the rarer half of the question's vocabulary: an act that contains
+        # at least one specific concept is worth the full search, while
+        # boilerplate-only acts are skipped. The rarest words may be
+        # question-specific ("VIES") and absent everywhere, hence several
+        # probes instead of one.
+        cutoff = max(1, len(weighted) // 2)
+        try:
+            for _idf, term in weighted[:cutoff]:
+                row = self.connection.execute(
+                    """
+                    SELECT 1 FROM nodes_fts
+                    JOIN nodes n ON n.id = nodes_fts.node_id
+                    JOIN docs d ON d.slug = n.doc_slug AND d.version = n.doc_version
+                    WHERE nodes_fts MATCH ? AND n.doc_slug = ? AND d.is_latest = 1
+                    LIMIT 1
+                    """,
+                    (term, slug),
+                ).fetchone()
+                if row is not None:
+                    return True
+        except sqlite3.OperationalError:
+            return True  # malformed expression: let the real search decide
+        return False
+
+    def select_docs(
+        self, question: str, max_docs: int = 12
+    ) -> dict[str, Any]:
+        """Narrow the catalogue to the acts worth searching for ``question``.
+
+        Ranks the latest consolidation of every act by title+description
+        overlap, then guarantees the shortlist covers the companion families
+        of the topic (norms, EU acts for harmonised taxes, ...). This is the
+        mechanical part of the source map: the agent still has to search each
+        family and read the text.
+        """
+        from .research import (
+            FAMILY_LABELS,
+            _expand_companions,
+            score_docs,
+            select_families,
+            topic_families,
+        )
+
+        docs = self.docs(latest_only=True)
+        topics, required = topic_families(question)
+        ranked = score_docs(question, docs)
+        # Descriptions are short and sometimes generic; the text index knows
+        # better which acts actually contain the question's concepts. Merge
+        # the documents of the strongest text hits into the ranking so an act
+        # with a thin description is not lost (EU acts, older orders...).
+        by_slug = {doc["slug"]: doc for doc in docs}
+        # Form PDF text is boilerplate ("cod de inregistrare in scopuri de
+        # TVA" appears in every declaration): it must not drown the acts that
+        # state the rules. Filter form hits out of the selection signal; the
+        # form family is covered by metadata scoring and the action sheets.
+        text_hits = [
+            hit
+            for hit in self.search(question, limit=50)
+            if by_slug.get(hit["doc"], {}).get("family") != "formulare"
+        ]
+        if text_hits:
+            top_score = ranked[0][0] if ranked else max(
+                hit["score"] for hit in text_hits
+            )
+            merged: dict[str, tuple[float, set[str], dict[str, Any]]] = {
+                doc["slug"]: (score, matched, doc)
+                for score, matched, doc in ranked
+            }
+            seen_docs: set[str] = set()
+            for hit in text_hits:
+                doc = by_slug.get(hit["doc"])
+                if doc is None or doc["slug"] in seen_docs:
+                    continue
+                seen_docs.add(doc["slug"])
+                # Decay per distinct act, not per hit: one verbose act must
+                # not consume the whole bonus budget with repeated hits.
+                # Forms carry formulaic boilerplate, so their text-hit bonus
+                # is halved: metadata already describes them well enough.
+                bonus = top_score * (1.0 - 0.04 * (len(seen_docs) - 1))
+                if doc["family"] == "formulare":
+                    bonus *= 0.5
+                previous = merged.get(doc["slug"])
+                if previous:
+                    score, matched, _ = previous
+                    merged[doc["slug"]] = (
+                        score + bonus * 0.5, matched, doc
+                    )
+                else:
+                    merged[doc["slug"]] = (bonus, set(), doc)
+            ranked = sorted(
+                merged.values(), key=lambda item: (-item[0], item[2]["slug"])
+            )
+        max_docs = max(4, min(max_docs, 20))
+        shortlist = select_families(
+            ranked, required, max_docs=max_docs, question=question, topics=topics
+        )
+        shortlist = _expand_companions(shortlist, docs)
+        covered = {doc["family"] for doc in shortlist}
+        return {
+            "question": question,
+            "topics": topics,
+            "required_families": required,
+            "missing_families": [f for f in required if f not in covered],
+            "family_labels": FAMILY_LABELS,
+            "docs": shortlist,
+            "total_docs": len(docs),
+        }
+
+    def research(
+        self, question: str, limit: int = 3, max_docs: int = 10
+    ) -> str:
+        """Evidence package across source families, with explicit gaps.
+
+        For every act in the shortlist it runs the text search and renders
+        the best hits (full node text + exact anchor + article link), then
+        lists the outgoing citations of the top hits so exceptions can be
+        followed, and finally reports which required families produced no
+        evidence at all.
+        """
+        from .research import FAMILY_LABELS
+
+        plan = self.select_docs(question, max_docs=max_docs + 4)
+        limit = max(1, min(limit, 6))
+        blocks: list[str] = [
+            "# Cercetare pe familii de surse",
+            "",
+            f"Întrebare: **{question}**",
+            "",
+            "Selecție de acte după descriere/titlu, apoi căutare de text în "
+            "fiecare. Citește textul, urmărește trimiterile pentru excepții și "
+            "declară explicit orice familie rămasă fără dovezi.",
+            "",
+        ]
+        if plan["topics"]:
+            blocks.append(
+                "Teme detectate: " + ", ".join(plan["topics"])
+                + ". Familii obligatorii de verificat: "
+                + ", ".join(
+                    FAMILY_LABELS.get(f, f) for f in plan["required_families"]
+                )
+                + "."
+            )
+            blocks.append("")
+
+        evidence_families: set[str] = set()
+        per_doc_hits: list[tuple[dict[str, Any], list[dict[str, Any]]]] = []
+        always_searched = set(plan["required_families"]) | {"coduri"}
+        for doc in plan["docs"]:
+            # Forms are actions, not legal grounds: their PDF text is full of
+            # boilerplate that matches any fiscal question. They are already
+            # surfaced through the action sheets below, so research skips
+            # their text and spends the budget on acts that state rules.
+            if doc["family"] == "formulare":
+                continue
+            # Required families and the codes always get the full search:
+            # their wording can differ from the question's (an EU act says
+            # "persoana impozabila" where the question says "firma"), and a
+            # false gap is worse than a slow query. For the remaining acts a
+            # cheap rare-stem probe skips those that cannot contain the
+            # question's concepts.
+            if (
+                doc["family"] not in always_searched
+                and not self._doc_has_terms(question, doc["slug"])
+            ):
+                continue
+            hits = self.search(question, doc=doc["slug"], limit=limit)
+            if hits:
+                evidence_families.add(doc["family"])
+                per_doc_hits.append((doc, hits))
+
+        # Second pass on the required families with the question's narrative
+        # stripped to its legal concepts: questions narrate facts ("PFA",
+        # "nu imi comunica"), while the decisive text states the rule ("nu
+        # i-a comunicat codul"). Dropping the personal/narrative tokens lets
+        # the condition-shaped paragraphs (presumptions, proof rules) rank.
+        narrative = {"pfa", "srl", "ii", "if", "firma", "firmei", "imi", "mie",
+                     "meu", "mea", "am", "avem", "facturez", "facturezi",
+                     "doresc", "vreau", "multumesc"}
+        tokens = [token for token, _stem in _query_tokens(question)
+                  if token not in narrative]
+        concept_query = " ".join(tokens)
+        # The legal status vocabulary makes the condition-shaped paragraphs
+        # (presumptions, proof rules) rank: the question asks about a status
+        # ("persoana fizica/neimpozabila") even when it never says the word.
+        if "tva" in plan["topics"]:
+            concept_query += " client neimpozabil"
+        if concept_query and concept_query != normalize(question):
+            for doc in plan["docs"]:
+                if doc["family"] not in plan["required_families"]:
+                    continue
+                extra = self.search(concept_query, doc=doc["slug"], limit=2)
+                if not extra:
+                    continue
+                existing = next(
+                    (hits for d, hits in per_doc_hits if d["slug"] == doc["slug"]),
+                    None,
+                )
+                if existing is None:
+                    evidence_families.add(doc["family"])
+                    per_doc_hits.append((doc, extra))
+                else:
+                    for hit in extra:
+                        if all(other["id"] != hit["id"] for other in existing):
+                            existing.append(hit)
+
+        for doc, hits in per_doc_hits:
+            family = FAMILY_LABELS.get(doc["family"], doc["family"])
+            blocks.append(f"## [{family}] {doc['title']}")
+            blocks.append(f"Act: `{doc['slug']}` · versiune: {doc['date']}")
+            blocks.append("")
+            for hit in hits:
+                title = hit["article_label"] or hit["label"] or hit["kind"]
+                blocks.append(f"### {title}")
+                blocks.append(f"SURSA: {hit['link']}")
+                if hit["article_link"] and hit["article_link"] != hit["link"]:
+                    blocks.append(f"ARTICOL: {hit['article_link']}")
+                blocks.append("")
+                blocks.append(hit["text"][:1600])
+                blocks.append("")
+            # One hop of citations from the best hit, plus the full article
+            # when the hit is a subdivision: consequences for third parties
+            # and exceptions often sit in the next paragraph of the same
+            # article, outside any citation edge.
+            top = hits[0]
+            target = top["article_id"] or top["id"]
+            if top["article_id"] and top["article_id"] != top["id"]:
+                try:
+                    article_data = self.content(top["article_id"], max_chars=12000)
+                    if article_data["text"][:1600] != top["text"][:1600]:
+                        blocks.append("**Articolul integral (context pentru excepții):**")
+                        blocks.append(f"SURSA: {article_data['link']}")
+                        blocks.append("")
+                        blocks.append(article_data["text"])
+                        blocks.append("")
+                except NotFoundError:
+                    pass
+            try:
+                refs = self.neighbors(target, subtree=True)
+            except (FileNotFoundError, NotFoundError):
+                refs = {"outgoing": [], "incoming": []}
+            useful = [
+                ref
+                for ref in refs["outgoing"]
+                if ref["rel"] in {"citat", "mentioneaza"} and ref["link"]
+            ][:8]
+            if useful:
+                blocks.append("**Trimiteri din textul de mai sus (verifică excepțiile):**")
+                for ref in useful:
+                    label = ref["label"] or ref["raw"] or ref["target"]
+                    blocks.append(f"- {label} — {ref['link']}")
+                blocks.append("")
+
+        gaps = [
+            family
+            for family in plan["required_families"]
+            if family not in evidence_families
+        ]
+        gaps += [f for f in plan["missing_families"] if f not in gaps]
+        blocks.append("## bilanț pe familii")
+        for family in plan["required_families"]:
+            label = FAMILY_LABELS.get(family, family)
+            if family in evidence_families:
+                blocks.append(f"- {label}: dovezi găsite mai sus.")
+            else:
+                blocks.append(
+                    f"- {label}: FĂRĂ dovezi. Caută din nou cu sinonime și "
+                    f"`search(doc=...)` pe actele din familie; dacă tot nu "
+                    "există text, spune explicit în răspuns că sursa nu "
+                    "acoperă acest aspect."
+                )
+        blocks.append("")
+
+        forms = self.actions(question, limit=3)
+        if forms:
+            blocks.append("## Fișe de acțiune (declarații ANAF)")
+            for form in forms:
+                blocks.append(
+                    f"- {form['code']} — {form['title'][:160]} — SURSA: {form['link']}"
+                )
+            blocks.append("")
+        return "\n".join(blocks)
 
     # ----------------------------------------------------------------- actions
     def _table_exists(self, name: str) -> bool:
@@ -938,20 +1260,44 @@ class LegalIndex:
         hits = self.search(question, doc=doc, limit=max(limit * 3, 8))
         no_text_hits = not hits
 
-        articles: list[str] = []
-        for hit in hits:
-            article_id = self.connection.execute(
+        # Keep per-family diversity: without this, a question whose best BM25
+        # hits all live in one act (usually the code) would never surface the
+        # implementing norms or the EU act. Reserve one slot per companion
+        # family before filling the rest with the strongest hits.
+        from .research import classify_family, topic_families
+
+        _topics, required = topic_families(question) if doc is None else ([], [])
+        picked: list[tuple[str, dict[str, Any]]] = []
+        picked_families: set[str] = set()
+
+        def article_target(hit: dict[str, Any]) -> str:
+            row = self.connection.execute(
                 "SELECT article_id FROM nodes WHERE id = ?", (hit["id"],)
             ).fetchone()
-            target = (
-                article_id["article_id"]
-                if article_id and article_id["article_id"]
-                else hit["id"]
-            )
-            if target not in articles:
-                articles.append(target)
-            if len(articles) >= limit:
+            return row["article_id"] if row and row["article_id"] else hit["id"]
+
+        def pick(hit: dict[str, Any]) -> None:
+            target = article_target(hit)
+            if any(target == existing for existing, _ in picked):
+                return
+            picked.append((target, hit))
+            picked_families.add(classify_family(hit["doc"], hit["doc_title"]))
+
+        def family_of(hit: dict[str, Any]) -> str:
+            return classify_family(hit["doc"], hit["doc_title"])
+
+        for family in required:
+            if family in picked_families or len(picked) >= limit:
+                continue
+            for hit in hits:
+                if family_of(hit) == family:
+                    pick(hit)
+                    break
+        for hit in hits:
+            if len(picked) >= limit:
                 break
+            pick(hit)
+        articles = [target for target, _ in picked]
 
         blocks: list[str] = [
             "# Evidențe din corpus",
@@ -962,6 +1308,17 @@ class LegalIndex:
             "PDF la pagina relevantă).",
             "",
         ]
+        missing = [f for f in required if f not in picked_families]
+        if missing:
+            from .research import FAMILY_LABELS
+
+            blocks.append(
+                "**Familii obligatorii fără dovezi în acest pachet:** "
+                + ", ".join(FAMILY_LABELS.get(f, f) for f in missing)
+                + ". Caută separat cu `search(doc=...)`/`research` înainte de "
+                "a concluziona; nu răspunde dintr-o singură familie."
+            )
+            blocks.append("")
         if no_text_hits:
             blocks.append(
                 "Nu am găsit pasaje de lege pentru această întrebare. "

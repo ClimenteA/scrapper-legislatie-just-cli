@@ -116,17 +116,55 @@ def test_audit_answer_flags_vies_answer_without_norme_or_eu_source():
         "Test?", "Clientul nu are cod VIES valid; il pot trata ca neimpozabil?"
     )
     warnings = audit_answer(answer)
-    assert any("Normele metodologice" in warning for warning in warnings)
-    assert any("282/2011" in warning for warning in warnings)
+    assert any("normele de aplicare" in warning for warning in warnings)
+    assert any("act al Uniunii" in warning for warning in warnings)
 
 
-def test_audit_answer_flags_vat_cancellation_without_d311_and_art11():
+def test_audit_answer_flags_vat_cancellation_without_form_and_deduction():
     answer = GOOD_ANSWER.replace(
         "Test?", "Codul de TVA mi-a fost anulat din cauza inactivitatii."
     )
     warnings = audit_answer(answer)
-    assert any("D311" in warning for warning in warnings)
-    assert any("art. 11" in warning for warning in warnings)
+    assert any("formular ANAF cu link PDF" in warning for warning in warnings)
+    assert any("dreptul de deducere" in warning for warning in warnings)
+
+
+def test_audit_answer_flags_cancellation_missing_beneficiary_effects():
+    answer = GOOD_ANSWER.replace(
+        "Test?", "Codul de TVA mi-a fost anulat din cauza inactivitatii."
+    ).replace(
+        "## Sursa",
+        "## ACTIUNI\n\n- Depune [D311](http://localhost:8000/pdfs/"
+        "declaratie-311/D311.pdf#page=1) in SPV.\n\n"
+        "Entitatea nu are drept de deducere a TVA si a cheltuielilor.\n\n"
+        "## Sursa",
+    )
+    warnings = audit_answer(answer)
+    assert any("beneficiar" in warning for warning in warnings)
+    assert not any("formular ANAF" in warning for warning in warnings)
+
+
+def test_audit_answer_accepts_complete_cancellation_answer():
+    answer = GOOD_ANSWER.replace(
+        "Test?", "Codul de TVA mi-a fost anulat din cauza inactivitatii."
+    ).replace(
+        "- Conform [Codul fiscal, art. 269 alin. (1)]"
+        "(http://localhost:8000/laws/x.html#s_art_256) — text.",
+        "- Conform [Codul fiscal, art. 269 alin. (1)]"
+        "(http://localhost:8000/laws/x.html#s_art_256) — text.\n"
+        "- Conform [Norme, pct. 1](http://localhost:8000/laws/3-expanded/"
+        "norme-metodologice/x.html#s_aln_1) — text.\n"
+        "- Conform [Reg. UE](http://localhost:8000/laws/3-expanded/"
+        "ue-regulament/x.html#p1) — text.",
+    ).replace(
+        "## Sursa",
+        "## ACTIUNI\n\n- Depune [D311](http://localhost:8000/pdfs/"
+        "declaratie-311/D311.pdf#page=1) in SPV.\n\n"
+        "Entitatea nu poate deduce TVA si cheltuielile; beneficiarii nu "
+        "deduc nici ei TVA si cheltuielile aferente achizitiilor de la ea.\n\n"
+        "## Sursa",
+    )
+    assert audit_answer(answer) == []
 
 
 def test_audit_answer_flags_form_in_actions_without_pdf_link():

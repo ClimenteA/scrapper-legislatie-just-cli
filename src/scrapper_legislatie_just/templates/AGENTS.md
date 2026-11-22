@@ -131,13 +131,16 @@ proces cu 4 gate-uri. Nu treci la urmatorul pana cand cel curent nu e bifat in
 fisa de lucru cu rezultate REALE de tool — nu cu intentia de a cauta.
 
 ### Gate A — Harta surselor
-Ruleaza `legislatie_docs()` si noteaza in fisa actele indexate, grupate pe
-familii: coduri, norme de aplicare, acte ale Uniunii, formulare. Pentru orice
-subiect care implica mai multe familii, toate familiile relevante sunt
-obligatorii; in materia taxei pe valoarea adaugata, familia normelor de
-aplicare si cea a actelor Uniunii nu sunt optionale nici cand familia
-codurilor pare suficienta. Un raspuns cu o singura familie in fisa NU se
-trimite.
+Ruleaza `legislatie_select_docs(intrebare)` (sau direct
+`legislatie_research(intrebare)`, care face si cautarea in text). Tool-ul
+filtreaza catalogul dupa descrierea/titlul actelor si garanteaza acoperirea
+familiilor obligatorii ale subiectului: coduri, norme de aplicare, acte ale
+Uniunii, formulare. `legislatie_docs()` ramane catalogul complet, cu
+descrierea fiecarui act, pentru verificare manuala. Pentru orice subiect care
+implica mai multe familii, toate familiile relevante sunt obligatorii; in
+materia taxei pe valoarea adaugata, familia normelor de aplicare si cea a
+actelor Uniunii nu sunt optionale nici cand familia codurilor pare suficienta.
+Un raspuns cu o singura familie in fisa NU se trimite.
 
 ### Gate B — Matricea de cautare
 Pentru fiecare sub-intrebare, completezi in fisa matricea de mai jos. O celula
@@ -172,21 +175,27 @@ verifica din nou cu tool-ul inainte de a fi scris.
 
 0. `legislatie_answer_template()` — ia formatul obligatoriu inainte de a
    compune raspunsul (cu atat mai mult cu cat promptul are mai multe intrebari).
-1. `legislatie_search` cu 2–4 variante de cuvinte-cheie (sinonime, termenul
-   legal, numele actului). Repeta cu alti termeni daca primul rezultat nu e
-   bun.
-2. `legislatie_context` pe intrebarea completa pentru un pachet de evidente
-   (articole intregi + trimiteri).
-3. `legislatie_article` pentru articolul principal (toate alineatele).
+1. `legislatie_research` pe fiecare sub-intrebare: selecteaza actele pe
+   familii, cauta textul in fiecare si raporteaza familiile fara dovezi.
+   Alternativ: `legislatie_select_docs` pentru harta surselor, apoi
+   `legislatie_search(doc=...)` pe fiecare act selectat.
+2. `legislatie_search` cu 2–4 variante de cuvinte-cheie (sinonime, termenul
+   legal, numele actului) pentru celulele ramase goale in matricea Gate B.
+   Repeta cu alti termeni daca primul rezultat nu e bun.
+3. `legislatie_article` pentru articolul principal (toate alineatele) —
+   concluzia se bazeaza pe textul alineatului, nu pe titlul articolului.
 4. `legislatie_show` / `legislatie_neighbors` pentru alineatele si exceptiile
-   citate. Urmareste trimiterile 1–2 hopuri daca raspunsul depinde de ele.
+   citate. Urmareste trimiterile 1–2 hopuri daca raspunsul depinde de ele,
+   inclusiv trimiterile catre alte acte (norme, regulamente UE).
 5. Daca intrebarea contine sume in valuta, ruleaza
    `legislatie_convert_currency` pentru fiecare suma inainte de a compune
    raspunsul.
-6. Pentru operatiuni fiscale, cauta formularul cu `legislatie_actions` si
-   citeaza linkul PDF returnat in sectiunea ACȚIUNI — inclusiv D311 cand e vorba
-   de cod de TVA anulat, si D300/D390/093 dupa caz. Orice formular mentionat
-   fara link PDF e semnalat de validator.
+6. Pentru operatiuni fiscale, cauta formularul cu `legislatie_actions`
+   (dupa cod sau dupa cuvinte-cheie din descriere, ex. „taxa colectata cod
+   anulat") si citeaza linkul PDF returnat in sectiunea ACȚIUNI. Nu presupune
+   ce formular se aplica: citeste descrierea returnata de `actions` si
+   potriveste-o cu obligatia din textul legii. Orice formular mentionat fara
+   link PDF e semnalat de validator.
 7. Abia apoi compune raspunsul in formatul de mai jos, cu concluzia directa
    in fiecare TL;DR (nu doar trimiteri la articole).
 
@@ -205,8 +214,16 @@ exact asa cum vin din tool.
 - `legislatie_neighbors(node_id, subtree=False)` — citarile care pleaca din nod
   si cele care intra in nod. `subtree=True` include tot articolul.
 - `legislatie_context(question, limit=4)` — pachet gata de citit: articole
-  intregi, linkuri `SURSA:` si trimiteri.
-- `legislatie_docs()` — lista actelor indexate, cu data consolidarii.
+  intregi, linkuri `SURSA:` si trimiteri; rezerva un loc fiecarui tip de
+  sursa obligatoriu (norme, acte UE) si semnaleaza familiile lipsa.
+- `legislatie_select_docs(question, max_docs=12)` — filtreaza catalogul dupa
+  descrierea/titlul actelor si garanteaza familiile obligatorii ale subiectului;
+  primul pas al hărții surselor (Gate A).
+- `legislatie_research(question, limit=3, max_docs=10)` — cautare completa pe
+  familii: selectie de acte + cautare de text in fiecare + trimiteri catre
+  exceptii + bilantul familiilor cu/fara dovezi + fise de actiune.
+- `legislatie_docs(all_versions=False)` — catalogul actelor indexate, grupat
+  pe familii, cu descrierea fiecarui act si data consolidarii.
 - `legislatie_cypher(query)` — interogare Cypher peste graful de citari
   (`4-processed/graph.db`): noduri `Articol`, `Alineat`, `Litera`, `Nota` etc.
   si muchii `CITEAZA` / `MENTIONEAZA`, plus variantele agregate `*_ARTICOL` cu
@@ -230,48 +247,37 @@ Linkurile PDF au forma `<radacina>/pdfs/<slug>/<fisier>.pdf#page=N`, unde
 `<radacina>` este `<base_url>` fara sufixul `/laws`. Copiaza-le exact cum vin
 din tool.
 
-## Cazuri critice (reguli verificate in index)
+## Capcane frecvente (checklist general, nu raspunsuri)
 
-Aceste doua scenarii au fost identificate ca surse de raspunsuri eronate.
-Le trateaza explicit, nu din memorie, si verifica-le cu tool-urile inainte
-de a scrie concluzia.
+Acestea sunt moduri de esec observate in raspunsuri, nu scenarii cu dezlegare.
+Verifica-le de fiecare data; solutia concreta vine intotdeauna din textul
+returnat de tool-uri pentru cazul intrebat.
 
-### Client UE fara cod VIES valid
-
-- Regula care conteaza pentru **locul prestarii** e in **Normele metodologice,
-  pct. (9)**: prestatorul **poate considera** clientul stabilit in UE persoana
-  neimpozabila **cand demonstreaza ca acel client nu i-a comunicat codul**
-  individual de inregistrare. Este o prezumptie permisiva („poate"), nu o
-  schimbare a statutului real si nu ceva automat.
-- Statutul real de persoana impozabila se determina dupa activitatea economica
-  independenta (Cod fiscal, art. 269 alin. (1); Reg. 282/2011, art. 17 alin. (1)
-  trimite la art. 9-13 si art. 43 din Directiva 2006/112/CE).
-- **Reg. 282/2011, art. 18 alin. (1) lit. a) si b)** da conditiile in care
-  prestatorul poate considera clientul **impozabil**: cod comunicat si
-  confirmat (valabilitate + nume + adresa, cf. art. 31 din Reg. 904/2010),
-  respectiv cerere depusa, alte dovezi si verificare rezonabila.
-- **Nu scrie** ca un certificat de inregistrare / dovada ca este firma e
-  suficienta pentru a-l trata ca impozabil fara cod valid comunicat.
-- Verifica exceptiile din aceeasi sursa: pct. (9) pentru servicii de
-  telecomunicatii/radiodifuziune-TV/electronice si pct. (10) + Reg. 282/2011,
-  art. 19 pentru uzul privat.
-
-### Anularea codului de TVA / inactivitate
-
-- Daca exista activitate si taxa colectata in perioada cu codul anulat,
-  obligatia declarativa e **D311** — „Declaratie privind taxa pe valoarea
-  adaugata colectata, datorata de persoanele impozabile al caror cod de
-  inregistrare in scopuri de TVA a fost anulat conform art. 316 alin. (11)
-  lit. a)-e), lit. g) sau lit. h)". Caut-o cu `legislatie_actions("311")`
-  si citeaza linkul PDF returnat. Termen: 25 inclusiv al lunii urmatoare
-  exigibilitatii.
-- Spune explicit, cu link, ca **entitatea nu deduce cheltuielile (impozit pe
-  profit) si nici TVA** in perioada de inactivitate — Cod fiscal, art. 11
-  alin. (6) — si ca **beneficiarii nu deduce cheltuielile si nici TVA** aferente
-  achizitiilor de la acea entitate — art. 11 alin. (7).
-- **Nu exista „decontul 323".** Art. 323 e temeiul legal al decontului de taxa
-  (formularul **D300**); formularul se citeaza intotdeauna din `actions`,
-  cu link PDF.
+1. **Regula speciala din alt act.** Cand intrebarea descrie un caz concret
+   (un client fara un cod, o dovada lipsa, un statut special), regula decisiva
+   e adesea o prezumptie sau o conditie de proba din normele de aplicare ori
+   dintr-un regulament UE, nu regula generala din cod. Cauta explicit
+   scenariul factual („nu a comunicat", „nu poate face dovada", „se considera")
+   in fiecare familie inainte de a concluziona din regula generala.
+2. **„Poate" != „trebuie" != automat.** Distinge prezumptiile permisive de
+   obligatii si de efecte automate; spune conditiile si dovezile cerute de
+   text si ce se intampla cand conditiile nu sunt indeplinite.
+3. **Dovada statutului != statutul real.** Cand textul leaga un tratament de
+   o dovada/cod/comunicare, nu inlocui conditia din text cu o alta dovada care
+   „pare echivalenta" (ex. un certificat). Scrie exact conditia din sursa.
+4. **Schimbarile de statut au consecinte in lant.** Pentru orice
+   anulare/suspendare/pierdere de regim, cauta in surse: (a) ce obligatii de
+   plata/colectare raman sau apar; (b) ce drepturi de deducere se pierd — atat
+   pentru entitate, cat si pentru beneficiarii ei, si pentru ce categorii
+   (TVA, cheltuieli); (c) ce declaratie speciala se depune, in ce termen —
+   cauta formularul in `actions` dupa descrierea obligatiei; (d) cum se
+   revine la regimul normal. Nu presupune ca nimic nu se mai declara.
+5. **Articol != formular.** Un numar de articol nu este cod de formular; nu
+   transforma „art. NNN" in „decontul NNN". Formularul se numeste doar dupa
+   `actions`, cu link PDF; articolul ramane temei legal.
+6. **Consecintele pentru terti.** Daca textul prevede efecte si pentru
+   clientii/beneficiarii/angajatii unei entitati, raspunsul le spune explicit;
+   un raspuns care trateaza doar entitatea e incomplet.
 
 ## Formatul raspunsului
 
