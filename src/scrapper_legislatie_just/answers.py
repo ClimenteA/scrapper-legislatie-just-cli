@@ -56,7 +56,23 @@ _BOLD_LABEL_RE = re.compile(r"^\*\*(.+?)\*\*\s*$", re.MULTILINE)
 _ANCHOR_LINK_RE = re.compile(r"\]\([^)\s]+#[^)\s]+\)")
 _DATE_RE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
 _FORM_AS_ARTICLE_RE = re.compile(
-    r"\b(decontul|decont|formularul|formular)\s+\d{2,4}\b", re.IGNORECASE
+    r"\b(decontul|decont|formularul|formular)\s+(\d{2,4})\b", re.IGNORECASE
+)
+# Links to ANAF form PDFs as returned by ``actions``. The tool returns them
+# without a ``#page=N`` fragment, so a bare ``.pdf`` link is a valid citation.
+_PDF_LINK_RE = re.compile(r"https?://[^\s)\]]+?\.pdf(?:#[^\s)\]]*)?", re.IGNORECASE)
+# Claims that a form/provision does not exist. These deserve a second-search
+# reminder: both times the model missed an existing form (registration after
+# threshold, collected-VAT declaration), a synonym query in ``actions`` found
+# it immediately.
+_NEGATIVE_CLAIM_RE = re.compile(
+    r"nu\s+(?:am\s+gasit|exista|este\s+prevazut|e\s+prevazut)\b", re.IGNORECASE
+)
+# Explicit numbering of questions inside the user prompt. Used only when the
+# caller passes ``question`` so the audit can check that every numbered
+# question got its own answer block.
+_PROMPT_NUMBERED_RE = re.compile(
+    r"(?:^|\n)\s*(?:intrebarea|intrebare)\s*(\d{1,2})\s*[:.\-)]", re.IGNORECASE
 )
 # Generic ANAF form codes: D followed by 3 digits (D300, D311, D390, D406...)
 # or the legacy zero-padded codes (010, 088, 093...). No specific form is
@@ -143,11 +159,32 @@ def _section_bodies(answer: str) -> dict[str, str]:
     return bodies
 
 
-def audit_answer(answer: str) -> list[str]:
+def _pdf_form_codes(answer: str) -> set[str]:
+    """Form codes covered by PDF links anywhere in the answer.
+
+    ``actions`` returns PDF links without a ``#page`` fragment, so both bare
+    ``.pdf`` URLs and ``.pdf#page=N`` URLs count. The code is read from the
+    URL path (``declaratie-311-...``, ``D300_v12...``): every 2-4 digit run
+    is a candidate, which is deliberately generous — the audit only uses
+    this to *suppress* false "form without link" warnings, never to invent
+    a citation.
+    """
+    codes: set[str] = set()
+    for match in _PDF_LINK_RE.finditer(answer):
+        url = match.group(0)
+        for digits in re.findall(r"(?<!\d)\d{2,4}(?!\d)", url):
+            codes.add(digits.lstrip("0") or "0")
+            codes.add(digits)
+    return codes
+
+
+def audit_answer(answer: str, question: str | None = None) -> list[str]:
     """Deterministic self-audit run by ``legislatie_validate_answer``.
 
     Checks structure, citation hygiene and the domain guards that address the
     known failure modes (VIES status, VAT-code cancellation, form vs. article).
+    When the original ``question`` is passed, also checks that every numbered
+    question in the prompt received its own answer block.
     It cannot judge whether a cited article actually supports the conclusion.
     """
     warnings = template_warnings(answer)
@@ -178,7 +215,14 @@ def audit_answer(answer: str) -> list[str]:
             "Sectiunea Sursa nu mentioneaza o data de versiune (YYYY-MM-DD)."
         )
 
+    linked_codes = _pdf_form_codes(answer)
     for match in _FORM_AS_ARTICLE_RE.finditer(answer):
+        code = match.group(2)
+        # The form may be cited on a different line (TL;DR mentions it, the
+        # ACȚIUNI bullet carries the PDF link). Only flag codes with no PDF
+        # link anywhere in the answer.
+        if code in linked_codes or code.lstrip("0") in linked_codes:
+            continue
         line_start = answer.rfind("\n", 0, match.start()) + 1
         line_end = answer.find("\n", match.end())
         line = answer[line_start : line_end if line_end != -1 else len(answer)]
@@ -289,6 +333,46 @@ def audit_answer(answer: str) -> list[str]:
                     "trebuie spuse explicit (cine NU poate deduce ce), nu "
                     "doar prin trimitere la articol."
                 )
+
+    # Completeness for multi-question prompts: when the caller passes the
+    # original prompt and it numbers its questions, every numbered question
+    # must have its own "### Intrebarea N" block in the answer. Without this,
+    # an answer that silently drops a whole question passes the audit.
+    if question:
+        expected = {
+            int(number)
+            for number in _PROMPT_NUMBERED_RE.findall(strip_diacritics(question))
+        }
+        if len(expected) > 1:
+            answered = {
+                int(match.group(1))
+                for match in re.finditer(
+                    r"^#{1,6}\s+Intrebarea\s+(\d{1,2})\b",
+                    strip_diacritics(answer),
+                    re.IGNORECASE | re.MULTILINE,
+                )
+            }
+            missing = sorted(expected - answered)
+            if missing:
+                warnings.append(
+                    "Promptul numeroteaza intrebarile "
+                    + ", ".join(str(n) for n in sorted(expected))
+                    + ", dar raspunsul nu are blocuri '### Intrebarea N' "
+                    "pentru: "
+                    + ", ".join(str(n) for n in missing)
+                    + ". Fiecare intrebare are nevoie de un raspuns complet."
+                )
+
+    # "Not found / does not exist" claims deserve a second search before they
+    # are sent: a synonym query in `actions`/`search` often finds the form or
+    # provision immediately (the audit cannot check the corpus itself).
+    if _NEGATIVE_CLAIM_RE.search(text):
+        warnings.append(
+            "Raspunsul afirma ca ceva nu exista / nu a fost gasit. Inainte "
+            "de trimitere ruleaza cel putin doua cautari cu sinonime "
+            "(`actions` dupa descrierea obligatiei, `search(doc=...)` pe "
+            "familia vizata); o cautare esuata nu dovedeste inexistenta."
+        )
 
     return list(dict.fromkeys(warnings))
 

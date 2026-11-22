@@ -10,6 +10,7 @@ from __future__ import annotations
 import math
 import re
 import sqlite3
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -294,24 +295,30 @@ class LegalIndex:
 
         # 1. Per-term retrieval. This guarantees that a rare term such as
         #    "programator" is represented even when a combined OR query lets
-        #    frequent words dominate the BM25 ordering.
-        per_term = max(limit * 20, 120)
+        #    frequent words dominate the BM25 ordering. The cap keeps a long
+        #    natural-language question from turning this into thousands of
+        #    scanned rows; the ranking below re-scores everything anyway.
+        per_term = min(max(limit * 20, 120), 400)
         for _token, _stem, term, _idf in terms:
             collect(fetch(term, per_term))
 
         # 2. Pairwise AND. A node containing two query terms ("scutire" +
         #    "impozit") is usually much more relevant than one containing only
-        #    a rare word with a different meaning.
-        if len(terms) > 1:
-            for index, (_, _, left, _) in enumerate(terms):
-                for _, _, right, _ in terms[index + 1 :]:
-                    collect(fetch(f"{left} AND {right}", max(limit * 8, 80)))
+        #    a rare word with a different meaning. Only the most discriminating
+        #    terms are paired: with 20 question terms this would otherwise be
+        #    ~190 FTS queries, which dominates tool latency for no recall gain.
+        pair_terms = sorted(terms, key=lambda item: -item[3])[:8]
+        if len(pair_terms) > 1:
+            for index, (_, _, left, _) in enumerate(pair_terms):
+                for _, _, right, _ in pair_terms[index + 1 :]:
+                    collect(fetch(f"{left} AND {right}", min(max(limit * 8, 80), 200)))
 
-        # 3. Full AND for queries where every term is present in one node.
-        if len(terms) > 1:
+        # 3. Full AND on the discriminating terms: a natural-language question
+        #    almost never has all of its words in one paragraph.
+        if len(pair_terms) > 1:
             collect(
                 fetch(
-                    " AND ".join(term for _, _, term, _ in terms),
+                    " AND ".join(term for _, _, term, _ in pair_terms),
                     max(limit * 4, 20),
                 )
             )
@@ -958,17 +965,28 @@ class LegalIndex:
         }
 
     def research(
-        self, question: str, limit: int = 3, max_docs: int = 10
+        self,
+        question: str,
+        limit: int = 3,
+        max_docs: int = 10,
+        compact: bool = False,
     ) -> str:
         """Evidence package across source families, with explicit gaps.
 
         For every act in the shortlist it runs the text search and renders
-        the best hits (full node text + exact anchor + article link), then
-        lists the outgoing citations of the top hits so exceptions can be
-        followed, and finally reports which required families produced no
-        evidence at all.
+        the best hits (exact anchor + article link + text), then lists the
+        outgoing citations of the top hits so exceptions can be followed,
+        and finally reports which required families produced no evidence.
+
+        ``compact=True`` keeps the anchors, links, family balance and form
+        sheets but replaces the full node/article text with a short excerpt
+        and drops the citation hop: the client then drills down with
+        ``article``/``show``/``neighbors`` only where the answer depends on it.
+        It also runs the independent per-act searches in a thread pool; each
+        worker opens its own read-only connection because sqlite3 objects are
+        bound to the thread that created them.
         """
-        from .research import FAMILY_LABELS
+        from .research import FAMILY_LABELS, scenario_expansions
 
         plan = self.select_docs(question, max_docs=max_docs + 4)
         limit = max(1, min(limit, 6))
@@ -982,6 +1000,13 @@ class LegalIndex:
             "declară explicit orice familie rămasă fără dovezi.",
             "",
         ]
+        if compact:
+            blocks.extend([
+                "Mod compact: pasaje scurte cu ancora exacta. Pentru text "
+                "integral foloseste `article`/`show`; pentru exceptii "
+                "`neighbors(node_id=...)`.",
+                "",
+            ])
         if plan["topics"]:
             blocks.append(
                 "Teme detectate: " + ", ".join(plan["topics"])
@@ -996,6 +1021,7 @@ class LegalIndex:
         evidence_families: set[str] = set()
         per_doc_hits: list[tuple[dict[str, Any], list[dict[str, Any]]]] = []
         always_searched = set(plan["required_families"]) | {"coduri"}
+        first_docs: list[dict[str, Any]] = []
         for doc in plan["docs"]:
             # Forms are actions, not legal grounds: their PDF text is full of
             # boilerplate that matches any fiscal question. They are already
@@ -1014,7 +1040,39 @@ class LegalIndex:
                 and not self._doc_has_terms(question, doc["slug"])
             ):
                 continue
-            hits = self.search(question, doc=doc["slug"], limit=limit)
+            first_docs.append(doc)
+
+        def search_in_worker(text: str, slug: str, count: int) -> list[dict[str, Any]]:
+            worker = LegalIndex(
+                data_dir=self.root,
+                db_path=self.db_path,
+                public_base_url=self.public_base_url,
+            )
+            try:
+                return worker.search(text, doc=slug, limit=count)
+            finally:
+                worker.close()
+
+        def parallel_search(
+            texts: list[tuple[dict[str, Any], str, int]]
+        ) -> dict[str, list[dict[str, Any]]]:
+            if not texts:
+                return {}
+            if len(texts) == 1:
+                doc, text, count = texts[0]
+                return {doc["slug"]: search_in_worker(text, doc["slug"], count)}
+            with ThreadPoolExecutor(max_workers=min(4, len(texts))) as pool:
+                results = pool.map(
+                    lambda item: search_in_worker(item[1], item[0]["slug"], item[2]),
+                    texts,
+                )
+                return {item[0]["slug"]: hits for item, hits in zip(texts, results)}
+
+        first_hits = parallel_search(
+            [(doc, question, limit) for doc in first_docs]
+        )
+        for doc in first_docs:
+            hits = first_hits.get(doc["slug"], [])
             if hits:
                 evidence_families.add(doc["family"])
                 per_doc_hits.append((doc, hits))
@@ -1035,11 +1093,26 @@ class LegalIndex:
         # ("persoana fizica/neimpozabila") even when it never says the word.
         if "tva" in plan["topics"]:
             concept_query += " client neimpozabil"
+        # Scenario synonyms translate the user's narrative into the legal
+        # vocabulary of presumptions, proofs and obligations, so the decisive
+        # paragraph ranks even when the question never uses its wording.
+        expansions = scenario_expansions(question, plan["topics"])
+        if expansions:
+            concept_query += " " + " ".join(expansions)
         if concept_query and concept_query != normalize(question):
-            for doc in plan["docs"]:
-                if doc["family"] not in plan["required_families"]:
-                    continue
-                extra = self.search(concept_query, doc=doc["slug"], limit=2)
+            second_docs = [
+                doc for doc in plan["docs"]
+                if doc["family"] in plan["required_families"]
+            ]
+            # With scenario expansions the query is long; a couple more hits
+            # keep both sides of a presumption pair (e.g. the proof rule and
+            # the "may treat as non-taxable" rule) in the evidence package.
+            second_limit = 4 if expansions else 3
+            extra_hits = parallel_search(
+                [(doc, concept_query, second_limit) for doc in second_docs]
+            )
+            for doc in second_docs:
+                extra = extra_hits.get(doc["slug"], [])
                 if not extra:
                     continue
                 existing = next(
@@ -1066,40 +1139,60 @@ class LegalIndex:
                 if hit["article_link"] and hit["article_link"] != hit["link"]:
                     blocks.append(f"ARTICOL: {hit['article_link']}")
                 blocks.append("")
-                blocks.append(hit["text"][:1600])
+                if compact:
+                    text = SPACE_RE.sub(" ", hit["text"]).strip()
+                    excerpt = text[:320]
+                    if len(text) > 320:
+                        excerpt = excerpt.rstrip() + " …"
+                    blocks.append(excerpt)
+                else:
+                    blocks.append(hit["text"][:1600])
                 blocks.append("")
-            # One hop of citations from the best hit, plus the full article
-            # when the hit is a subdivision: consequences for third parties
-            # and exceptions often sit in the next paragraph of the same
-            # article, outside any citation edge.
             top = hits[0]
             target = top["article_id"] or top["id"]
-            if top["article_id"] and top["article_id"] != top["id"]:
-                try:
-                    article_data = self.content(top["article_id"], max_chars=12000)
-                    if article_data["text"][:1600] != top["text"][:1600]:
-                        blocks.append("**Articolul integral (context pentru excepții):**")
-                        blocks.append(f"SURSA: {article_data['link']}")
-                        blocks.append("")
-                        blocks.append(article_data["text"])
-                        blocks.append("")
-                except NotFoundError:
-                    pass
-            try:
-                refs = self.neighbors(target, subtree=True)
-            except (FileNotFoundError, NotFoundError):
-                refs = {"outgoing": [], "incoming": []}
-            useful = [
-                ref
-                for ref in refs["outgoing"]
-                if ref["rel"] in {"citat", "mentioneaza"} and ref["link"]
-            ][:8]
-            if useful:
-                blocks.append("**Trimiteri din textul de mai sus (verifică excepțiile):**")
-                for ref in useful:
-                    label = ref["label"] or ref["raw"] or ref["target"]
-                    blocks.append(f"- {label} — {ref['link']}")
+            if compact:
+                blocks.append(
+                    f"- Pentru excepții: `neighbors(node_id=\"{target}\")` "
+                    "sau `article` pe articolul sursei de mai sus."
+                )
                 blocks.append("")
+            else:
+                # One hop of citations from the best hit, plus the full article
+                # when the hit is a subdivision: consequences for third parties
+                # and exceptions often sit in the next paragraph of the same
+                # article, outside any citation edge.
+                if top["article_id"] and top["article_id"] != top["id"]:
+                    try:
+                        article_data = self.content(
+                            top["article_id"], max_chars=12000
+                        )
+                        if article_data["text"][:1600] != top["text"][:1600]:
+                            blocks.append(
+                                "**Articolul integral (context pentru excepții):**"
+                            )
+                            blocks.append(f"SURSA: {article_data['link']}")
+                            blocks.append("")
+                            blocks.append(article_data["text"])
+                            blocks.append("")
+                    except NotFoundError:
+                        pass
+                try:
+                    refs = self.neighbors(target, subtree=True)
+                except (FileNotFoundError, NotFoundError):
+                    refs = {"outgoing": [], "incoming": []}
+                useful = [
+                    ref
+                    for ref in refs["outgoing"]
+                    if ref["rel"] in {"citat", "mentioneaza"} and ref["link"]
+                ][:8]
+                if useful:
+                    blocks.append(
+                        "**Trimiteri din textul de mai sus (verifică excepțiile):**"
+                    )
+                    for ref in useful:
+                        label = ref["label"] or ref["raw"] or ref["target"]
+                        blocks.append(f"- {label} — {ref['link']}")
+                    blocks.append("")
 
         gaps = [
             family
@@ -1122,6 +1215,15 @@ class LegalIndex:
         blocks.append("")
 
         forms = self.actions(question, limit=3)
+        # A second form search with the scenario vocabulary: form metadata
+        # describes the obligation ("taxa colectata ... cod anulat"), not the
+        # user's narrative, so the direct question can miss the right form.
+        if expansions:
+            seen_forms = {form["code"] for form in forms}
+            for form in self.actions(" ".join(expansions), limit=3):
+                if form["code"] not in seen_forms and len(forms) < 5:
+                    forms.append(form)
+                    seen_forms.add(form["code"])
         if forms:
             blocks.append("## Fișe de acțiune (declarații ANAF)")
             for form in forms:

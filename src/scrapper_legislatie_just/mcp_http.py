@@ -84,7 +84,12 @@ mcp = MCPServer(
         "de formular. (6) Raspunde cu concluzia directa (da/nu/depinde + ce "
         "faci) in fiecare TL;DR, citeaza linkurile HTTPS exacte returnate, "
         "descompune intrebarile multiple si finalizeaza cu "
-        "validate_answer(answer)."
+        "validate_answer(answer, question=<promptul original>). Viteza: apeleaza tool-urile independente "
+        "in acelasi bloc paralel (nu unul dupa altul); `research` e compact "
+        "implicit si e singurul punct de plecare (nu apela si `select_docs` "
+        "separat); nu apela `docs()` intr-un raspuns — foloseste "
+        "`select_docs(question)`; pentru text integral si exceptii foloseste "
+        "`article`/`show`/`neighbors` dupa ce ai ancorele din research."
     ),
 )
 
@@ -147,12 +152,18 @@ def context(question: str, limit: int = 4, doc: str | None = None) -> str:
 
 
 @mcp.tool()
-def docs(all_versions: bool = False) -> str:
-    """Catalogul actelor indexate, grupat pe familii de surse, cu descrierea fiecarui act si data consolidarii. Foloseste descrierile pentru a decide ce acte/familii trebuie cautate."""
+def docs(all_versions: bool = False, limit: int = 60) -> str:
+    """Catalog PARCIAL al actelor, grupat pe familii. ATENTIE: catalogul complet are ~600.000 caractere si umple contextul; intr-un raspuns foloseste `select_docs(question)`, nu acest tool."""
+    limit = max(1, min(limit, 200))
     with _index() as index:
-        return strip_diacritics(
-            format_docs(index.docs(latest_only=not all_versions))
-        )
+        rows = index.docs(latest_only=not all_versions)
+        text = format_docs(rows[:limit])
+        if len(rows) > limit:
+            text += (
+                f"\n\n(+{len(rows) - limit} acte omise; foloseste "
+                "`select_docs(question)` pentru harta surselor.)"
+            )
+        return strip_diacritics(text)
 
 
 @mcp.tool()
@@ -168,14 +179,20 @@ def select_docs(question: str, max_docs: int = 12) -> str:
 
 
 @mcp.tool()
-def research(question: str, limit: int = 3, max_docs: int = 10) -> str:
-    """Cercetare completa intr-un singur apel: selecteaza actele pe familii, cauta textul in fiecare, aduce pasajele cu ancora exacta + trimiterile catre exceptii si raporteaza familiile fara dovezi. Completeaza apoi cu search(doc=...)/article/neighbors."""
+def research(
+    question: str,
+    limit: int = 3,
+    max_docs: int = 10,
+    compact: bool = True,
+) -> str:
+    """Cercetare completa intr-un singur apel: selecteaza actele pe familii, cauta textul in fiecare si raporteaza familiile fara dovezi. Implicit compact: pasaje scurte cu ancora exacta, fara text integral; completeaza cu article/show/neighbors doar unde e nevoie."""
     with _index() as index:
         return strip_diacritics(
             index.research(
                 strip_diacritics(question),
                 limit=max(1, min(limit, 6)),
                 max_docs=max(4, min(max_docs, 16)),
+                compact=compact,
             )
         )
 
@@ -220,11 +237,11 @@ def answer_template() -> str:
 
 
 @mcp.tool()
-def validate_answer(answer: str) -> str:
-    """Auto-audit inainte de trimitere: sectiuni obligatorii, linkuri cu ancora, distinctia articol/formular si versiunea. Nu verifica daca dreptul citat sustine concluzia."""
+def validate_answer(answer: str, question: str | None = None) -> str:
+    """Auto-audit inainte de trimitere: sectiuni obligatorii, linkuri cu ancora, distinctia articol/formular si versiunea. Trimite si `question` (promptul original) ca sa verifice ca fiecare intrebare numerotata are blocul ei de raspuns. Nu verifica daca dreptul citat sustine concluzia."""
     from scrapper_legislatie_just.answers import audit_answer
 
-    warnings = audit_answer(answer)
+    warnings = audit_answer(answer, question=question)
     if not warnings:
         return "OK: raspunsul trece auto-auditul de structura si citate."
     return strip_diacritics("Avertismente auto-audit:\n- " + "\n- ".join(warnings))

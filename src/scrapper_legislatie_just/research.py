@@ -105,6 +105,60 @@ TOPIC_TITLE_HINTS: dict[str, tuple[str, ...]] = {
     "accize": ("accize",),
 }
 
+# Scenario vocabulary -> legal vocabulary. Questions narrate facts ("nu imi
+# comunica un cod", "cod anulat din oficiu"); the decisive texts state
+# presumptions, proof rules and obligations ("poate considera", "dovada",
+# "taxa colectata"). When a trigger phrase appears in the question, its
+# expansions are appended to the concept query used on the required families,
+# so condition-shaped paragraphs rank even when the user never uses the legal
+# wording. These are search terms, not answers: no act, article or form is
+# named here.
+SCENARIO_SYNONYMS: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
+    (
+        "tva",
+        ("nu comunica", "nu mi-a comunicat", "nu a comunicat", "fara cod",
+         "cod valid", "vies", "neimpozabila", "persoana fizica"),
+        ("poate considera", "dovada", "comunicat codul", "informatii contrare"),
+    ),
+    (
+        "tva",
+        ("anulat", "anulare", "inactiv", "reactivare", "sediu social"),
+        ("taxa colectata", "drept de deducere", "cheltuieli",
+         "declaratie", "reinregistrare"),
+    ),
+    (
+        "tva",
+        ("plafon", "neplatitor", "scutire", "inregistrare in scopuri"),
+        ("cifra de afaceri", "depasirea plafonului", "regim special",
+         "solicita inregistrarea"),
+    ),
+    (
+        "fiscal",
+        ("penalitati", "amenzi", "dobanzi", "nedepunere"),
+        ("contraventie", "obligatii fiscale accesorii", "penalitate de intarziere"),
+    ),
+)
+
+
+def scenario_expansions(question: str, topics: list[str] | tuple[str, ...]) -> list[str]:
+    """Extra search terms for the concept query, from scenario synonyms.
+
+    Only triggers whose topic matches the question fire, so a labour-law
+    question about a "plafon" never pulls VAT vocabulary. Terms already
+    present in the normalized question are not repeated.
+    """
+    normalized = normalize(question)
+    extra: list[str] = []
+    for topic, triggers, expansions in SCENARIO_SYNONYMS:
+        if topic not in topics:
+            continue
+        if not any(trigger in normalized for trigger in triggers):
+            continue
+        for term in expansions:
+            if term not in normalized and term not in extra:
+                extra.append(term)
+    return extra
+
 
 def classify_family(slug: str, title: str = "") -> str:
     """Return the family key of an act, from its slug/title only."""

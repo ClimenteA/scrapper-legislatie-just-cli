@@ -44,6 +44,25 @@ si cursul BNR.
    rezultatul. Fara un rezultat de tool sau de sursa oficiala citata nu ai voie
    sa afirmi un articol, un link sau un curs valutar.
 
+## Regula de viteza (codemode activat)
+
+- **Bateaza apelurile independente intr-un singur `execute`.** Scrie
+  `await Promise.all([...])` cu toate tool-urile care nu depind unele de
+  altele (de ex. `research`, `actions`). Nu le rula unul dupa altul: fiecare
+  rundă reîncarcă tot contextul.
+- **Un singur punct de plecare:** `legislatie_research(question)`. El face
+  deja selectia pe familii. Nu apela separat `select_docs` decat daca
+  `research` raporteaza o familie fara dovezi.
+- **`research` e compact implicit:** intoarce pasaje scurte cu ancora
+  exacta. Pentru text integral si exceptii, apeleaza `article` / `show` /
+  `neighbors` **doar** pe ancorele care chiar sustin concluzia.
+- **Nu apela `legislatie_docs()` intr-un raspuns** — catalogul complet are
+  ~600.000 de caractere. Daca iti trebuie harta surselor, foloseste
+  `legislatie_select_docs(question)`.
+- **Nu apela `answer_template()`** — formatul e deja in acest fisier.
+  `validate_answer` se ruleaza o singura data, la final, cu promptul
+  original ca `question`.
+
 ## Reguli obligatorii
 
 1. **Nu raspunde din memorie.** Pentru orice intrebare juridica, cauta mai intai
@@ -106,7 +125,11 @@ orice citat pe care il folosesti. Fisa nu este sursa de drept si nu se citeaza.
 4. **Urmareste lantul** de trimiteri cu `neighbors`/`cypher` 1-2 hopuri;
    noteaza exceptiile si exceptiile de la exceptii.
 5. **Testul negativ**: orice „nu", „nu se aplica", „nu se include" trebuie sa
-   aiba text explicit de excludere in sursa. Nu deduce excluderea.
+   aiba text explicit de excludere in sursa. Nu deduce excluderea. Inainte de
+   „nu exista" / „nu am gasit un formular/prevedere", ruleaza cel putin doua
+   cautari cu sinonime: `actions` dupa descrierea obligatiei (nu doar dupa
+   codul banuit) si `search(doc=...)` pe familia vizata. O cautare esuata nu
+   dovedeste inexistenta.
 6. **Articol != formular**: numarul de articol nu e cod de formular. Formularele
    vin doar din `actions`, cu link PDF; un articol poate fi doar temei legal.
    Verifica intotdeauna in `actions` inainte de a numi un formular.
@@ -120,9 +143,10 @@ orice citat pe care il folosesti. Fisa nu este sursa de drept si nu se citeaza.
    (x) TL;DR-ul spune direct da/nu/depinde + actiunea concreta; (xi) fisa de
    lucru are matricea Gate B completata cu rezultate reale de tool — altfel
    nu trimite raspunsul.
-   Ruleaza `legislatie_validate_answer(raspuns)` si corecteaza avertismentele.
-   Validatorul verifica si existenta linkului PDF pentru fiecare formular
-   mentionat in sectiunea ACTIUNI.
+   Ruleaza `legislatie_validate_answer(raspuns, question=<promptul original>)`
+   si corecteaza avertismentele. Cu promptul trimis, validatorul verifica si
+   ca fiecare intrebare numerotata are blocul ei de raspuns, plus existenta
+   linkului PDF pentru fiecare formular mentionat in sectiunea ACTIUNI.
 
 ## Protocol de cautare (gate-uri obligatorii)
 
@@ -131,12 +155,12 @@ proces cu 4 gate-uri. Nu treci la urmatorul pana cand cel curent nu e bifat in
 fisa de lucru cu rezultate REALE de tool — nu cu intentia de a cauta.
 
 ### Gate A — Harta surselor
-Ruleaza `legislatie_select_docs(intrebare)` (sau direct
-`legislatie_research(intrebare)`, care face si cautarea in text). Tool-ul
-filtreaza catalogul dupa descrierea/titlul actelor si garanteaza acoperirea
-familiilor obligatorii ale subiectului: coduri, norme de aplicare, acte ale
-Uniunii, formulare. `legislatie_docs()` ramane catalogul complet, cu
-descrierea fiecarui act, pentru verificare manuala. Pentru orice subiect care
+Ruleaza **o singura data** `legislatie_research(intrebare)`: face selectia pe
+familii si cautarea in text in acelasi apel. Doar daca raporteaza o familie
+fara dovezi, ruleaza `legislatie_select_docs(intrebare)` urmat de
+`legislatie_search(doc=...)` pe actele acelei familii. Nu apela
+`legislatie_docs()` (catalogul complet e ~600.000 de caractere). Pentru
+orice subiect care
 implica mai multe familii, toate familiile relevante sunt obligatorii; in
 materia taxei pe valoarea adaugata, familia normelor de aplicare si cea a
 actelor Uniunii nu sunt optionale nici cand familia codurilor pare suficienta.
@@ -173,12 +197,13 @@ verifica din nou cu tool-ul inainte de a fi scris.
 
 ## Flux recomandat
 
-0. `legislatie_answer_template()` — ia formatul obligatoriu inainte de a
-   compune raspunsul (cu atat mai mult cu cat promptul are mai multe intrebari).
-1. `legislatie_research` pe fiecare sub-intrebare: selecteaza actele pe
-   familii, cauta textul in fiecare si raporteaza familiile fara dovezi.
-   Alternativ: `legislatie_select_docs` pentru harta surselor, apoi
-   `legislatie_search(doc=...)` pe fiecare act selectat.
+0. (in acelasi bloc paralel cu pasul 1) `legislatie_actions` pentru formular,
+   daca operatiunea e fiscala. Nu apela `answer_template()` — formatul e in
+   acest fisier.
+1. `legislatie_research(intrebare)` — unicul punct de plecare: selecteaza
+   actele pe familii, cauta textul in fiecare si raporteaza familiile fara
+   dovezi. Doar pentru familiile raportate fara dovezi: `select_docs` +
+   `search(doc=...)`.
 2. `legislatie_search` cu 2–4 variante de cuvinte-cheie (sinonime, termenul
    legal, numele actului) pentru celulele ramase goale in matricea Gate B.
    Repeta cu alti termeni daca primul rezultat nu e bun.
@@ -219,11 +244,14 @@ exact asa cum vin din tool.
 - `legislatie_select_docs(question, max_docs=12)` — filtreaza catalogul dupa
   descrierea/titlul actelor si garanteaza familiile obligatorii ale subiectului;
   primul pas al hărții surselor (Gate A).
-- `legislatie_research(question, limit=3, max_docs=10)` — cautare completa pe
-  familii: selectie de acte + cautare de text in fiecare + trimiteri catre
-  exceptii + bilantul familiilor cu/fara dovezi + fise de actiune.
-- `legislatie_docs(all_versions=False)` — catalogul actelor indexate, grupat
-  pe familii, cu descrierea fiecarui act si data consolidarii.
+- `legislatie_research(question, limit=3, max_docs=10, compact=True)` —
+  cautare completa pe familii, **compact implicit**: pasaje scurte cu ancora
+  exacta + bilantul familiilor cu/fara dovezi + fise de actiune. Pentru text
+  integral si exceptii, apeleaza `article`/`show`/`neighbors` pe ancorele
+  gasite.
+- `legislatie_docs(all_versions=False, limit=60)` — catalog **partial**;
+  NU il folosi intr-un raspuns (~600.000 de caractere). Pentru harta
+  surselor, `select_docs(question)`.
 - `legislatie_cypher(query)` — interogare Cypher peste graful de citari
   (`4-processed/graph.db`): noduri `Articol`, `Alineat`, `Litera`, `Nota` etc.
   si muchii `CITEAZA` / `MENTIONEAZA`, plus variantele agregate `*_ARTICOL` cu
@@ -237,15 +265,19 @@ exact asa cum vin din tool.
   descriere, link catre PDF). Cautarea foloseste FTS5 peste metadata, deci
   `D212` gaseste formularul cu codul `D_212_2736_2025`. Foloseste rezultatul in
   sectiunea ACȚIUNI; nu inventa formulare care nu apar aici.
-- `legislatie_answer_template()` — formatul de raspuns obligatoriu.
-- `legislatie_validate_answer(answer)` — auto-audit inainte de trimitere:
-  sectiuni obligatorii, linkuri cu ancora, distinctia articol/formular si
-  versiunea. Ruleaza-l dupa redactare si corecteaza avertismentele. Nu verifica
-  daca dreptul citat sustine concluzia.
+- `legislatie_answer_template()` — formatul de raspuns; **optional**, e deja
+  in acest fisier.
+- `legislatie_validate_answer(answer, question=None)` — auto-audit inainte de
+  trimitere: sectiuni obligatorii, linkuri cu ancora, distinctia
+  articol/formular si versiunea. Trimite si promptul original ca `question`
+  pentru verificarea completitudinii intrebarilor numerotate. Ruleaza-l dupa
+  redactare si corecteaza avertismentele. Nu verifica daca dreptul citat
+  sustine concluzia.
 
-Linkurile PDF au forma `<radacina>/pdfs/<slug>/<fisier>.pdf#page=N`, unde
-`<radacina>` este `<base_url>` fara sufixul `/laws`. Copiaza-le exact cum vin
-din tool.
+Linkurile PDF au forma `<radacina>/pdfs/<slug>/<fisier>.pdf`, eventual cu
+`#page=N`, unde `<radacina>` este `<base_url>` fara sufixul `/laws`. Copiaza-le
+exact cum vin din tool — `actions` le returneaza de obicei fara `#page=N`, iar
+un astfel de link e o citare valida.
 
 ## Capcane frecvente (checklist general, nu raspunsuri)
 
@@ -261,7 +293,9 @@ returnat de tool-uri pentru cazul intrebat.
    in fiecare familie inainte de a concluziona din regula generala.
 2. **„Poate" != „trebuie" != automat.** Distinge prezumptiile permisive de
    obligatii si de efecte automate; spune conditiile si dovezile cerute de
-   text si ce se intampla cand conditiile nu sunt indeplinite.
+   text si ce se intampla cand conditiile nu sunt indeplinite. Verbul modal
+   se COPIAZA din text: daca sursa spune „poate considera", raspunsul nu are
+   voie sa scrie „trebuie" sau „se considera automat" (si invers).
 3. **Dovada statutului != statutul real.** Cand textul leaga un tratament de
    o dovada/cod/comunicare, nu inlocui conditia din text cu o alta dovada care
    „pare echivalenta" (ex. un certificat). Scrie exact conditia din sursa.

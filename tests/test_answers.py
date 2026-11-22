@@ -183,6 +183,59 @@ def test_audit_answer_accepts_form_in_actions_with_pdf_link():
     assert audit_answer(answer) == []
 
 
+def test_audit_accepts_bare_pdf_link_and_form_mentioned_elsewhere():
+    # `actions` returns PDF links without a #page fragment; a mention of the
+    # form on another line (TL;DR, TEMEI LEGAL) must not trigger a warning
+    # when the ACȚIUNI bullet carries the PDF link.
+    answer = GOOD_ANSWER.replace(
+        "## Sursa",
+        "## ACTIUNI\n\n- Depune [formularul 311](http://localhost:8000/pdfs/"
+        "declaratie-311-opanaf-779-2024/311_OPANAF_779_2024.pdf) in SPV.\n\n"
+        "## Sursa",
+    ).replace(
+        "Da.",
+        "Da, se depune formularul 311 pentru taxa colectata.",
+    )
+    assert audit_answer(answer) == []
+
+
+def test_audit_still_flags_form_without_any_pdf_link():
+    answer = GOOD_ANSWER.replace(
+        "Da.", "Da, se depune formularul 311."
+    )
+    assert any(
+        "numar de articol nu este cod de formular" in warning
+        for warning in audit_answer(answer)
+    )
+
+
+def test_audit_flags_missing_question_block_when_prompt_numbered():
+    prompt = (
+        "Intrebarea 1: Clientul UE nu comunica un cod VIES valid?\n\n"
+        "Intrebarea 2: Codul de TVA mi-a fost anulat din oficiu?"
+    )
+    warnings = audit_answer(MULTI_QUESTION_ANSWER, question=prompt)
+    assert not any("blocuri" in warning for warning in warnings)
+    single_block = MULTI_QUESTION_ANSWER.split("### Intrebarea 2")[0] + (
+        "\n## Sursa\n\n_Versiune consolidata: 2026-10-25._\n"
+    )
+    warnings = audit_answer(single_block, question=prompt)
+    assert any("Intrebarea" in w and "2" in w for w in warnings)
+
+
+def test_audit_without_prompt_does_not_require_blocks():
+    assert audit_answer(GOOD_ANSWER, question="O singura intrebare?") == []
+
+
+def test_audit_flags_negative_existence_claims():
+    answer = GOOD_ANSWER.replace(
+        "Da.", "Da. Nu am gasit un formular pentru aceasta operatiune."
+    )
+    assert any(
+        "nu dovedeste inexistenta" in warning for warning in audit_answer(answer)
+    )
+
+
 def test_slugify_removes_diacritics_and_punctuation():
     assert (
         slugify("Pot deduce TVA-ul la autoturism?")

@@ -172,6 +172,18 @@ def test_research_reports_evidence_per_family_and_gaps(family_index):
     assert "SURSA: file://" in text
 
 
+def test_research_compact_keeps_anchors_but_drops_full_text(family_index):
+    question = "Prestator TVA client UE fara cod de inregistrare comunicat"
+    verbose = family_index.research(question, limit=2)
+    compact = family_index.research(question, limit=2, compact=True)
+    assert len(compact) < len(verbose)
+    assert "nu i-a comunicat codul" in compact
+    assert "SURSA: file://" in compact
+    assert "bilanț pe familii" in compact
+    assert "Articolul integral" not in compact
+    assert "Mod compact" in compact
+
+
 def test_research_flags_family_without_evidence(tmp_path):
     # A corpus with no EU act at all: a VAT question still requires the EU
     # family, so the balance sheet must flag the gap explicitly instead of
