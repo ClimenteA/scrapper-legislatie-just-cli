@@ -19,7 +19,7 @@ BUCHAREST = "Europe/Bucharest"
 
 def scheduled_reindex() -> None:
     try:
-        result = reindex(force=False, ocr=get_settings().reindex_ocr)
+        result = reindex(force=False)
         log.info(f"Scheduled reindex finished: {result}")
     except Exception:  # noqa: BLE001 - the scheduler must survive a failed run
         log.exception("Scheduled reindex failed; will retry next month.")

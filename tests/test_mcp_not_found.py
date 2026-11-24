@@ -9,56 +9,57 @@ a single WARNING line for the operator.
 
 from __future__ import annotations
 
-import re
+import shutil
+from pathlib import Path
 
 import pytest
 from loguru import logger
 from mcp.server.mcpserver.exceptions import ToolError, UnexpectedToolError
 
+from scrapper_legislatie_just import mcp_http
+from scrapper_legislatie_just.bm25_index import Bm25IndexBuilder
 from scrapper_legislatie_just.query import LegalIndex
-from scrapper_legislatie_just_server import mcp_http
+
+FIXTURES = Path(__file__).parent / "fixtures" / "needle"
 
 
-def _some_article_id() -> str:
-    index = LegalIndex()
-    try:
-        row = index.connection.execute(
-            "SELECT id FROM nodes WHERE kind = 'articol' LIMIT 1"
-        ).fetchone()
-        return row["id"]
-    finally:
-        index.close()
+@pytest.fixture(autouse=True)
+def patched_index(tmp_path, monkeypatch):
+    root = tmp_path / "legislatie-descarcata"
+    shutil.copytree(FIXTURES / "3-expanded", root / "3-expanded")
+    Bm25IndexBuilder(surse=[], data_dir=root).build()
+
+    def build() -> LegalIndex:
+        return LegalIndex(data_dir=root)
+
+    monkeypatch.setattr(mcp_http, "_index", build)
+    return root
 
 
 def test_missing_article_is_actionable_tool_error():
     with pytest.raises(ToolError) as exc:
-        mcp_http.article("codul-fiscal", "9999")
+        mcp_http.article("act-a", "9999")
     message = str(exc.value)
     assert "9999" in message
     assert "Articole disponibile" in message  # helps the model retry with a real number
     assert not isinstance(exc.value, UnexpectedToolError)  # would log a traceback
 
 
-def test_bare_anchor_gets_full_id_candidates():
-    # ``s_art_281`` is copied from a SURSA: link; it is ambiguous across acts.
-    with pytest.raises(ToolError) as exc:
-        mcp_http.neighbors("s_art_281")
-    message = str(exc.value)
-    assert "ID complet" in message
-    # a concrete full id the model can use next, whatever the current version
-    assert re.search(r"\w+@\d{4}-\d{2}-\d{2}#", message)
-
-
 def test_unknown_full_id_is_actionable_tool_error():
-    unknown = _some_article_id().split("#")[0] + "#s_art_9999"
     with pytest.raises(ToolError) as exc:
-        mcp_http.show(unknown)
-    assert "nu exista in index" in str(exc.value)
+        mcp_http.show("act-a@2024-01-01#art-9999")
+    assert "9999" in str(exc.value)
+
+
+def test_invalid_node_id_is_actionable_tool_error():
+    with pytest.raises(ToolError) as exc:
+        mcp_http.show("not-a-full-id")
+    assert "ID invalid" in str(exc.value)
 
 
 def test_valid_full_id_still_works():
-    result = mcp_http.neighbors(_some_article_id())
-    assert "Trimiteri din nod" in result
+    result = mcp_http.show("act-a@2024-01-01#art-2")
+    assert "Exceptii de la exceptie" in result
 
 
 def test_misses_emit_warning():
@@ -71,7 +72,7 @@ def test_misses_emit_warning():
     )
     try:
         with pytest.raises(ToolError):
-            mcp_http.article("codul-fiscal", "9999")
+            mcp_http.article("act-a", "9999")
     finally:
         logger.remove(sink_id)
 

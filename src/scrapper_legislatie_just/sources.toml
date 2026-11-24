@@ -1,4 +1,4 @@
-# Sources downloaded by scrapper-legislatie-just-cli.
+# Sources downloaded by the indexer (scrapper-legislatie-just-indexer).
 #
 # Each [[sources]] entry is validated by scrapper_legislatie_just.sources.Sursa.
 # The document URL is derived from numar_link as:

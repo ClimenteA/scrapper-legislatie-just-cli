@@ -4,10 +4,12 @@
   "mcp": {
     "servers": {
       "legislatie": {
-        "type": "local",
-        "command": [".venv/bin/python", "-m", "scrapper_legislatie_just.mcp_server"],
-        "cwd": ".",
-        "timeout": 600000
+        "type": "remote",
+        "url": "http://localhost:8000/mcp",
+        "oauth": false,
+        "codemode": true,
+        "timeout": 600000,
+        "headers": { "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZG1pbkB0ZXN0LmNvbSIsImV4cCI6MTc5NjA3NjAwMCwiaWF0IjoxNzk1MTYxOTQ5LCJqdGkiOiI4YTM0YmNkZWU3YTI0NGU5YTRiZmUwMDljY2IxZWZmYSJ9.BkPCYLvCuHrigZsrt27hFN-b-UOenhu5k3Wdb0NC2TI" }
       }
     }
   }

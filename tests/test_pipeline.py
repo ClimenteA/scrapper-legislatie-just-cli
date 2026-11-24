@@ -1,16 +1,21 @@
+"""Step 1-4 pipeline tests: downloader helpers and HTML -> Markdown -> BM25.
+
+No network: the cleaned fixtures are copied straight into ``2-clean``.
+"""
+
+from __future__ import annotations
+
 import json
 import shutil
-import sqlite3
 from datetime import date
 from pathlib import Path
 
 import pytest
 from bs4 import BeautifulSoup
-from typer.testing import CliRunner
 
-from scrapper_legislatie_just.cli import app
+from scrapper_legislatie_just.bm25_index import Bm25IndexBuilder
 from scrapper_legislatie_just.cleaner import LegislatieJustCleaner
-from scrapper_legislatie_just.config import DATA_ROOT_NAME, STEP_DIRS
+from scrapper_legislatie_just.config import STEP_DIRS
 from scrapper_legislatie_just.downloader import (
     LinkuriConsolidate,
     LegislatieJustDownloader,
@@ -18,6 +23,7 @@ from scrapper_legislatie_just.downloader import (
 )
 from scrapper_legislatie_just.expander import LegislatieJustExpander
 from scrapper_legislatie_just.misc import extract_file_meta
+from scrapper_legislatie_just.query import LegalIndex
 from scrapper_legislatie_just.sources import (
     SOURCES_TOML_PATH,
     load_sources,
@@ -30,39 +36,6 @@ SLUG = "legea-contabilitatii"
 
 def _source():
     return next(s for s in surse_legislatie_just if s.slug == SLUG)
-
-
-def test_cli_lists_sources():
-    runner = CliRunner()
-    result = runner.invoke(app, ["list-sources"])
-
-    assert result.exit_code == 0
-    assert SLUG in result.stdout
-    assert "codul-fiscal" in result.stdout
-
-
-def test_cli_paths(tmp_path):
-    runner = CliRunner()
-    result = runner.invoke(app, ["paths", "--data-dir", str(tmp_path)])
-
-    assert result.exit_code == 0
-    for name in STEP_DIRS.values():
-        assert str(tmp_path / name) in result.stdout
-        assert (tmp_path / name).is_dir()
-
-
-def test_default_data_dir_is_current_directory(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("SCRAPPER_DATA_DIR", raising=False)
-
-    runner = CliRunner()
-    result = runner.invoke(app, ["paths"])
-
-    data_root = tmp_path.resolve() / DATA_ROOT_NAME
-    assert str(data_root) in result.stdout
-    for name in STEP_DIRS.values():
-        assert str(data_root / name) in result.stdout
-        assert (data_root / name).is_dir()
 
 
 def test_downloader_helpers(tmp_path):
@@ -86,9 +59,7 @@ def test_download_requires_monolith(tmp_path, monkeypatch):
 
     # Dry-run only discovers URLs and does not need monolith.
     downloader.dry_run = True
-    monkeypatch.setattr(
-        downloader, "preia_linkuri_consolidate", lambda url: []
-    )
+    monkeypatch.setattr(downloader, "preia_linkuri_consolidate", lambda url: [])
     assert downloader.download() == {
         "downloaded": 0,
         "failed": 0,
@@ -96,29 +67,6 @@ def test_download_requires_monolith(tmp_path, monkeypatch):
         "orphans_removed": 0,
         "index_invalidated": False,
     }
-
-
-def test_downloader_dry_run_without_network(tmp_path, monkeypatch):
-    """Step 1 discovery logic can be tested without hitting the website."""
-    downloader = LegislatieJustDownloader(
-        surse=[_source()], data_dir=tmp_path, limit=1, dry_run=True
-    )
-    monkeypatch.setattr(
-        downloader,
-        "preia_linkuri_consolidate",
-        lambda url: [
-            LinkuriConsolidate(
-                link_sursa="https://legislatie.just.ro/Public/DetaliiDocument/1576",
-                data_consolidarii="2024-01-15",
-            )
-        ],
-    )
-
-    result = downloader.download()
-
-    assert result["downloaded"] == 1
-    assert result["failed"] == 0
-    assert list((tmp_path / STEP_DIRS["raw"]).glob("*.html")) == []
 
 
 def _consolidari():
@@ -132,6 +80,21 @@ def _consolidari():
             data_consolidarii="2024-06-20",
         ),
     ]
+
+
+def test_downloader_dry_run_without_network(tmp_path, monkeypatch):
+    downloader = LegislatieJustDownloader(
+        surse=[_source()], data_dir=tmp_path, limit=1, dry_run=True
+    )
+    monkeypatch.setattr(
+        downloader, "preia_linkuri_consolidate", lambda url: _consolidari()
+    )
+
+    result = downloader.download()
+
+    assert result["downloaded"] == 1
+    assert result["failed"] == 0
+    assert list((tmp_path / STEP_DIRS["raw"]).glob("*.html")) == []
 
 
 def test_downloader_keeps_only_latest_consolidation(tmp_path, monkeypatch):
@@ -165,6 +128,14 @@ def test_downloader_falls_back_to_current_date_without_history(tmp_path, monkeyp
     assert latest.fara_data_consolidare is True
 
 
+def _fake_download(text: str):
+    def download(url, path):
+        Path(path).write_text(text)
+        return True
+
+    return download
+
+
 def test_downloader_skips_fallback_duplicate_by_content_hash(tmp_path, monkeypatch):
     """Sources without history must not be saved again when the text is unchanged."""
     raw_dir = tmp_path / STEP_DIRS["raw"]
@@ -186,24 +157,20 @@ def test_downloader_skips_fallback_duplicate_by_content_hash(tmp_path, monkeypat
         data_consolidarii="2026-11-08",
         fara_data_consolidare=True,
     )
-    monkeypatch.setattr(
-        downloader, "preia_linkuri_consolidate", lambda url: [fallback]
-    )
+    monkeypatch.setattr(downloader, "preia_linkuri_consolidate", lambda url: [fallback])
     monkeypatch.setattr(
         downloader, "preia_forma_printabila_link", lambda url: "https://x/print"
     )
-
-    def fake_download(url, path):
-        # Different monolith header/serialization, same law text.
-        Path(path).write_text(
+    monkeypatch.setattr(
+        downloader,
+        "download_page",
+        _fake_download(
             "<!-- Saved from https://legislatie.just.ro/y at 2026-11-08T00:00:00Z "
             "using monolith v2.12.0 -->"
             "<html><head><meta charset='UTF-8'></head>"
             "<body><p>Lege</p></body></html>"
-        )
-        return True
-
-    monkeypatch.setattr(downloader, "download_page", fake_download)
+        ),
+    )
 
     result = downloader.download()
 
@@ -227,18 +194,15 @@ def test_downloader_replaces_fallback_when_content_changed(tmp_path, monkeypatch
         data_consolidarii="2026-11-08",
         fara_data_consolidare=True,
     )
-    monkeypatch.setattr(
-        downloader, "preia_linkuri_consolidate", lambda url: [fallback]
-    )
+    monkeypatch.setattr(downloader, "preia_linkuri_consolidate", lambda url: [fallback])
     monkeypatch.setattr(
         downloader, "preia_forma_printabila_link", lambda url: "https://x/print"
     )
-
-    def fake_download(url, path):
-        Path(path).write_text("<html><body><p>Text nou</p></body></html>")
-        return True
-
-    monkeypatch.setattr(downloader, "download_page", fake_download)
+    monkeypatch.setattr(
+        downloader,
+        "download_page",
+        _fake_download("<html><body><p>Text nou</p></body></html>"),
+    )
 
     result = downloader.download()
 
@@ -262,24 +226,21 @@ def test_downloader_prunes_older_versions_by_default(tmp_path, monkeypatch):
     for directory in (raw_dir, clean_dir, expanded_dir):
         (directory / old_name).write_text("<html><body><p>Text vechi</p></body></html>")
     (expanded_dir / f"1576-{SLUG}-2024-01-15.md").write_text("Text vechi")
-    (processed_dir / "law.db").write_text("stale")
+    (processed_dir / "docs.json").write_text("stale")
 
     downloader = LegislatieJustDownloader(surse=[_source()], data_dir=tmp_path)
     monkeypatch.setattr(
         "scrapper_legislatie_just.downloader.find_monolith", lambda: "monolith"
     )
-    monkeypatch.setattr(
-        downloader, "preia_linkuri_consolidate", lambda url: _consolidari()
-    )
+    monkeypatch.setattr(downloader, "preia_linkuri_consolidate", lambda url: _consolidari())
     monkeypatch.setattr(
         downloader, "preia_forma_printabila_link", lambda url: "https://x/print"
     )
-
-    def fake_download(url, path):
-        Path(path).write_text("<html><body><p>Text nou</p></body></html>")
-        return True
-
-    monkeypatch.setattr(downloader, "download_page", fake_download)
+    monkeypatch.setattr(
+        downloader,
+        "download_page",
+        _fake_download("<html><body><p>Text nou</p></body></html>"),
+    )
 
     result = downloader.download()
 
@@ -291,7 +252,7 @@ def test_downloader_prunes_older_versions_by_default(tmp_path, monkeypatch):
     assert not (clean_dir / old_name).exists()
     assert not (expanded_dir / old_name).exists()
     assert not (expanded_dir / f"1576-{SLUG}-2024-01-15.md").exists()
-    assert not (processed_dir / "law.db").exists()
+    assert not (processed_dir / "docs.json").exists()
 
 
 def test_downloader_keeps_all_versions_when_requested(tmp_path, monkeypatch):
@@ -306,18 +267,15 @@ def test_downloader_keeps_all_versions_when_requested(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "scrapper_legislatie_just.downloader.find_monolith", lambda: "monolith"
     )
-    monkeypatch.setattr(
-        downloader, "preia_linkuri_consolidate", lambda url: _consolidari()
-    )
+    monkeypatch.setattr(downloader, "preia_linkuri_consolidate", lambda url: _consolidari())
     monkeypatch.setattr(
         downloader, "preia_forma_printabila_link", lambda url: "https://x/print"
     )
-
-    def fake_download(url, path):
-        Path(path).write_text("<html><body><p>Text nou</p></body></html>")
-        return True
-
-    monkeypatch.setattr(downloader, "download_page", fake_download)
+    monkeypatch.setattr(
+        downloader,
+        "download_page",
+        _fake_download("<html><body><p>Text nou</p></body></html>"),
+    )
 
     assert downloader.download()["downloaded"] == 1
     assert (raw_dir / old_name).exists()
@@ -328,9 +286,7 @@ def test_downloader_all_versions_flag(tmp_path, monkeypatch):
     downloader = LegislatieJustDownloader(
         surse=[_source()], data_dir=tmp_path, dry_run=True, all_versions=True
     )
-    monkeypatch.setattr(
-        downloader, "preia_linkuri_consolidate", lambda url: _consolidari()
-    )
+    monkeypatch.setattr(downloader, "preia_linkuri_consolidate", lambda url: _consolidari())
 
     assert downloader.download()["downloaded"] == 2
 
@@ -343,9 +299,7 @@ def test_downloader_skips_only_the_same_version(tmp_path, monkeypatch):
     downloader = LegislatieJustDownloader(
         surse=[_source()], data_dir=tmp_path, dry_run=True
     )
-    monkeypatch.setattr(
-        downloader, "preia_linkuri_consolidate", lambda url: _consolidari()
-    )
+    monkeypatch.setattr(downloader, "preia_linkuri_consolidate", lambda url: _consolidari())
 
     # An older local version must not block the latest consolidation.
     assert downloader.download()["downloaded"] == 1
@@ -359,7 +313,7 @@ def test_downloader_removes_orphan_sources(tmp_path):
     clean_dir = tmp_path / STEP_DIRS["clean"]
     expanded_dir = tmp_path / STEP_DIRS["expanded"]
     processed_dir = tmp_path / STEP_DIRS["processed"]
-    for directory in (raw_dir, clean_dir, expanded_dir, processed_dir):
+    for directory in (raw_dir, clean_dir, expanded_dir, processed_dir, processed_dir / "bm25"):
         directory.mkdir(parents=True, exist_ok=True)
 
     orphan_slug = "sursa-eliminata"
@@ -375,10 +329,10 @@ def test_downloader_removes_orphan_sources(tmp_path):
     orphan_dir = expanded_dir / orphan_slug
     keep_dir.mkdir()
     orphan_dir.mkdir()
-    (keep_dir / keep_file).write_text("keep")
+    (keep_dir / f"1576-{SLUG}-2024-01-15.md").write_text("keep")
     (orphan_dir / f"toc-{orphan_slug}.json").write_text("{}")
 
-    for name in ("law.db", "graph.db", "manifest.json", "catalog.json"):
+    for name in ("docs.json", "actions.json", "manifest.json", "catalog.json"):
         (processed_dir / name).write_text("stale")
 
     downloader = LegislatieJustDownloader(
@@ -393,19 +347,18 @@ def test_downloader_removes_orphan_sources(tmp_path):
     assert not (raw_dir / orphan_file).exists()
     assert not (clean_dir / orphan_file).exists()
     assert not orphan_dir.exists()
-    for name in ("law.db", "graph.db", "manifest.json", "catalog.json"):
+    assert not (processed_dir / "bm25").exists()
+    for name in ("docs.json", "actions.json", "manifest.json", "catalog.json"):
         assert not (processed_dir / name).exists()
 
 
 def test_downloader_invalidates_index_with_orphan_slug(tmp_path):
     processed_dir = tmp_path / STEP_DIRS["processed"]
     processed_dir.mkdir(parents=True)
-    db_path = processed_dir / "law.db"
-    connection = sqlite3.connect(db_path)
-    connection.execute("CREATE TABLE docs(slug TEXT)")
-    connection.execute("INSERT INTO docs(slug) VALUES('sursa-eliminata')")
-    connection.commit()
-    connection.close()
+    docs_path = processed_dir / "docs.json"
+    docs_path.write_text(
+        json.dumps({"built_at": "x", "items": [{"slug": "sursa-eliminata"}]})
+    )
 
     downloader = LegislatieJustDownloader(
         surse=[_source()], data_dir=tmp_path, known_surse=[_source()]
@@ -413,13 +366,11 @@ def test_downloader_invalidates_index_with_orphan_slug(tmp_path):
     result = downloader.remove_orphan_sources()
 
     assert result == {"removed": 0, "index_invalidated": True}
-    assert not db_path.exists()
+    assert not docs_path.exists()
 
 
 def test_downloader_keeps_configured_sources_outside_selection(tmp_path):
-    other_source = next(
-        s for s in surse_legislatie_just if s.slug == "codul-fiscal"
-    )
+    other_source = next(s for s in surse_legislatie_just if s.slug == "codul-fiscal")
     raw_dir = tmp_path / STEP_DIRS["raw"]
     raw_dir.mkdir(parents=True)
     other_file = f"{other_source.numar_link}-{other_source.slug}-2024-01-15.html"
@@ -538,24 +489,12 @@ descriere = "Fisier local."
 def test_sources_env_var_overrides_cwd_file(tmp_path, monkeypatch):
     local_sources = tmp_path / "sources.toml"
     local_sources.write_text(
-        """
-[[sources]]
-numar_link = 1
-nume = "Din cwd"
-slug = "din-cwd"
-descriere = "Din cwd."
-""",
+        '[[sources]]\nnumar_link = 1\nnume = "Din cwd"\nslug = "din-cwd"\ndescriere = "Din cwd."\n',
         encoding="utf-8",
     )
     env_sources = tmp_path / "env-sources.toml"
     env_sources.write_text(
-        """
-[[sources]]
-numar_link = 2
-nume = "Din env"
-slug = "din-env"
-descriere = "Din env."
-""",
+        '[[sources]]\nnumar_link = 2\nnume = "Din env"\nslug = "din-env"\ndescriere = "Din env."\n',
         encoding="utf-8",
     )
     monkeypatch.chdir(tmp_path)
@@ -602,7 +541,7 @@ def test_extract_file_meta():
 
 
 def test_clean_and_expand_pipeline(tmp_path):
-    """Run steps 2-3 on two small fixtures (no network)."""
+    """Run steps 2-4 on two small fixtures (no network)."""
     raw_dir = tmp_path / STEP_DIRS["raw"]
     raw_dir.mkdir(parents=True)
 
@@ -611,10 +550,8 @@ def test_clean_and_expand_pipeline(tmp_path):
 
     src = _source()
 
-    # Step 2: clean.
-    cleaner = LegislatieJustCleaner(
-        surse=[src], data_dir=tmp_path, use_ocr=False
-    )
+    # Step 2: clean (Docling OCR was removed; inline base64 images are dropped).
+    cleaner = LegislatieJustCleaner(surse=[src], data_dir=tmp_path)
     clean_result = cleaner.cleanify()
 
     assert clean_result == {"cleaned": 2, "skipped": 0}
@@ -631,21 +568,40 @@ def test_clean_and_expand_pipeline(tmp_path):
     # Running again skips already cleaned files.
     assert cleaner.cleanify() == {"cleaned": 0, "skipped": 2}
 
-    # Step 3: expand (copy + TOC + Markdown conversion).
+    # Step 3: expand HTML -> Markdown + TOC.
     expander = LegislatieJustExpander(surse=[src], data_dir=tmp_path)
     expand_result = expander.expand()
 
-    assert expand_result["copied"] == 2
     assert expand_result["tocs"] == 1
+    assert expand_result["html_converted"] == 2
     assert expand_result["converted"] == 2
 
-    toc_path = tmp_path / STEP_DIRS["expanded"] / SLUG / f"toc-{SLUG}.json"
-    toc = json.loads(toc_path.read_text())
+    slug_dir = tmp_path / STEP_DIRS["expanded"] / SLUG
+    toc = json.loads((slug_dir / f"toc-{SLUG}.json").read_text())
     assert len(toc["consolidari"]) == 2
+    assert all(item["md_name"].endswith(".md") for item in toc["consolidari"])
 
-    md_files = sorted((tmp_path / STEP_DIRS["expanded"] / SLUG).glob("*.md"))
+    md_files = sorted(slug_dir.glob("*.md"))
     assert len(md_files) == 2
     assert any("Prezentul act" in path.read_text() for path in md_files)
+    # 3-expanded holds Markdown only: no HTML copy is left behind.
+    assert list(slug_dir.glob("*.html")) == []
+
+    # Step 4: BM25 index over the Markdown corpus.
+    builder = Bm25IndexBuilder(surse=[src], data_dir=tmp_path)
+    build_result = builder.build()
+    assert build_result["documents"] == 2
+    assert build_result["nodes"] > 0
+    assert (tmp_path / STEP_DIRS["processed"] / "bm25").is_dir()
+    assert (tmp_path / STEP_DIRS["processed"] / "docs.json").exists()
+
+    index = LegalIndex(data_dir=tmp_path)
+    try:
+        hits = index.search("Prezentul act", doc=SLUG, limit=3)
+        assert hits
+        assert hits[0]["doc"] == SLUG
+    finally:
+        index.close()
 
 
 def test_slug_filter(tmp_path):
@@ -655,12 +611,8 @@ def test_slug_filter(tmp_path):
     fixture = next(FIXTURES.glob("*.html"))
     shutil.copy2(fixture, raw_dir / fixture.name)
 
-    other_source = next(
-        s for s in surse_legislatie_just if s.slug == "codul-fiscal"
-    )
-    cleaner = LegislatieJustCleaner(
-        surse=[other_source], data_dir=tmp_path, use_ocr=False
-    )
+    other_source = next(s for s in surse_legislatie_just if s.slug == "codul-fiscal")
+    cleaner = LegislatieJustCleaner(surse=[other_source], data_dir=tmp_path)
 
     assert cleaner.cleanify() == {"cleaned": 0, "skipped": 0}
     assert list((tmp_path / STEP_DIRS["clean"]).glob("*.html")) == []

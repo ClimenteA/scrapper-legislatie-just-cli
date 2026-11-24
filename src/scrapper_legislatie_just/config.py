@@ -4,6 +4,9 @@ from pathlib import Path
 DATA_ROOT_NAME = "legislatie-descarcata"
 ANSWERS_DIR_NAME = "raspunsuri-ai"
 CONTEXT_DIR_NAME = "date-context"
+# User-provided PDF corpus (ANAF declarations + EU acts) lives inside the data
+# root, alongside the generated pipeline folders.
+PDF_SOURCES_DIRNAME = "0-pdfs"
 
 # Folder names are prefixed with the pipeline step that writes into them.
 STEP_DIRS = {

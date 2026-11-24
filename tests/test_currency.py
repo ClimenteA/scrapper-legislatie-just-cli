@@ -3,11 +3,8 @@ from decimal import Decimal
 
 import cursvalutarbnr
 import pytest
-from typer.testing import CliRunner
 
 from scrapper_legislatie_just import currency
-from scrapper_legislatie_just.cli import app
-from scrapper_legislatie_just.mcp_server import handle
 
 RATES = {
     "2023-12-29": {"EUR": 4.9700, "USD": 4.5800},
@@ -101,73 +98,3 @@ def test_invalid_amount(bnr):
     with pytest.raises(ValueError, match="numar valid"):
         currency.convert_to_ron("o suta", "EUR")
 
-
-def test_mcp_convert_currency_tool(bnr):
-    response = handle(
-        {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "tools/call",
-            "params": {
-                "name": "convert_currency",
-                "arguments": {
-                    "amount": 10,
-                    "currency": "USD",
-                    "date": "2024-08-02",
-                },
-            },
-        }
-    )
-
-    assert response is not None
-    assert response["result"]["isError"] is False
-    text = response["result"]["content"][0]["text"]
-    assert "10 USD = 46 RON" in text
-    assert "1 USD = 4.6000 RON" in text
-
-
-def test_mcp_lists_convert_currency():
-    response = handle({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
-    names = {tool["name"] for tool in response["result"]["tools"]}
-    assert "convert_currency" in names
-
-
-def test_mcp_lists_every_tool():
-    """A stale or partial server makes the model fall back to curl."""
-    response = handle({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
-    names = {tool["name"] for tool in response["result"]["tools"]}
-    assert names == {
-        "search",
-        "article",
-        "show",
-        "neighbors",
-        "context",
-        "context_files",
-        "read_context",
-        "convert_currency",
-        "save_answer",
-        "get_user_tax_context",
-        "save_user_tax_context",
-        "docs",
-        "cypher",
-    }
-
-
-def test_cli_convert(bnr):
-    runner = CliRunner()
-    result = runner.invoke(
-        app,
-        ["convert", "100", "EUR", "--date", "2024-08-02"],
-    )
-
-    assert result.exit_code == 0, result.stdout
-    assert "100 EUR = 497.53 RON" in result.stdout
-    assert "Data cursului: 2024-08-02" in result.stdout
-
-
-def test_cli_convert_reports_bad_currency(bnr):
-    runner = CliRunner()
-    result = runner.invoke(app, ["convert", "10", "XYZ"])
-
-    assert result.exit_code == 1
-    assert "nu este suportata" in result.stderr

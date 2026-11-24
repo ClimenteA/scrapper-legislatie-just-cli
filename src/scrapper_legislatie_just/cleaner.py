@@ -1,18 +1,12 @@
-import hashlib
 import re
-import shutil
-import tempfile
-import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import markdown
 from bs4 import BeautifulSoup, NavigableString, Tag
 
 from .config import resolve_data_dir, step_dir
 from .logger import log
 from .misc import extract_file_meta, strip_diacritics
-from .ocr import extract_table_from_image_base64
 from .sources import Sursa, surse_legislatie_just
 
 # ── Links & style — safe to parse with BS4 (no JS) ───────────
@@ -71,19 +65,6 @@ STYLES_CSS = """
         margin-bottom: 100px !important;
     }
 
-    /* OCR TABLES */
-    .ocr-text-wrapper table {
-        width: 100%;
-        border-collapse: collapse;
-        font-family: monospace;
-        font-size: 12px;
-    }
-    .ocr-text-wrapper td, th {
-        border: 1px solid #ccc;
-        padding: 8px;
-        min-width: 120px;
-    }
-    
     /* SCROLL TO TOP */
 
     .size-6 {
@@ -801,7 +782,6 @@ class LegislatieJustCleaner:
     clean_dir: str | Path | None = None
     limit: int | None = None
     force: bool = False
-    use_ocr: bool = True
 
     def __post_init__(self):
         root = resolve_data_dir(self.data_dir)
@@ -817,16 +797,6 @@ class LegislatieJustCleaner:
         )
         self.raw_dir.mkdir(parents=True, exist_ok=True)
         self.clean_dir.mkdir(parents=True, exist_ok=True)
-
-        # 1. Define the centralized cache directory
-        self.ocr_cache_dir = Path(tempfile.gettempdir()) / "ljust_docling_ocr_cache"
-
-        # 2. If it exists, wipe it to ensure a clean start
-        if self.ocr_cache_dir.exists():
-            shutil.rmtree(self.ocr_cache_dir)
-
-        # 3. Create the fresh directory
-        self.ocr_cache_dir.mkdir(parents=True, exist_ok=True)
 
     def inject_head(self, soup: BeautifulSoup):
         # 1. Strip existing head tags
@@ -1504,80 +1474,18 @@ class LegislatieJustCleaner:
 
         return result
 
-    def replace_base64_img_with_ocr_result_img(self, soup: BeautifulSoup):
-        images = soup.find_all("img")
+    def strip_base64_images(self, soup: BeautifulSoup) -> BeautifulSoup:
+        """Drop inline base64 images before the Markdown conversion.
 
-        for img in images:
-            src = img.get("src")
-            if not src:
-                continue
-
-            # Determine if the image source is a base64 data URI
-            is_base64 = src.startswith("data:image/") and "base64," in src
-            if not is_base64:
-                continue
-
-            log.debug("Parsing image...")
-
-            # --- CACHING LOGIC ---
-            # 1. Create a SHA256 hash of the base64 string
-            img_hash = hashlib.sha256(src.encode("utf-8")).hexdigest()
-            cache_file = self.ocr_cache_dir / f"{img_hash}.md"
-
-            ocr_text = ""
-
-            # 2. Check if we already processed this exact image
-            if cache_file.exists():
-                log.debug(f"Found cache for image {img_hash[:8]}...")
-                ocr_text = strip_diacritics(cache_file.read_text(encoding="utf-8"))
-            else:
-                log.debug(
-                    f"No cache for current file. Running OCR for {img_hash[:8]}..."
-                )
-                # 3. Extract the OCR text dynamically based on the source type
-                ocr_text = strip_diacritics(extract_table_from_image_base64(src))
-
-                # 4. Save to cache atomically (Thread/Process safe)
-                if ocr_text:
-                    # Write to a random temporary file first
-                    temp_cache = (
-                        self.ocr_cache_dir / f"{img_hash}_{uuid.uuid4().hex}.tmp"
-                    )
-                    temp_cache.write_text(ocr_text, encoding="utf-8")
-                    # Rename is an atomic operation on most OSs.
-                    # If two processes do this at the exact same time, the file just gets overwritten safely.
-                    temp_cache.replace(cache_file)
-            # ----------------------
-
-            # 5. Setup the new container
-            new_div = soup.new_tag("div", attrs={"class": "ocr-result-container"})
-
-            # 6. Create and append the new <img> tag
-            new_img_tag = soup.new_tag("img", src=src)
-            new_img_tag["style"] = "max-width: 100%; height: auto;"
-            new_div.append(new_img_tag)
-
-            # 7. Create a wrapper for the text
-            if ocr_text:
-                text_container = soup.new_tag(
-                    "div", attrs={"class": "ocr-text-wrapper"}
-                )
-
-                # Convert markdown to an HTML string
-                html_table_string = markdown.markdown(ocr_text, extensions=["tables"])
-
-                # Parse the HTML string into BeautifulSoup tags
-                parsed_table_html = BeautifulSoup(html_table_string, "html.parser")
-
-                # Append the parsed tags, NOT a literal string
-                text_container.append(parsed_table_html)
-                new_div.append(text_container)
-
-            # 8. Replace the old <img> with our new complex <div>
-            img.replace_with(new_div)
-
-            log.debug("Done parsing image!")
-
+        Scanned annexes used to be OCR-ed with Docling. The new pipeline has no
+        Docling dependency, and a data URI would otherwise dump megabytes of
+        base64 into the Markdown corpus. The source PDFs remain available under
+        ``5-pdfs`` when a form needs the original scan.
+        """
+        for img in soup.find_all("img"):
+            src = img.get("src") or ""
+            if src.startswith("data:image/") and "base64," in src:
+                img.decompose()
         return soup
 
     def make_semantic_html(self, soup: BeautifulSoup):
@@ -1772,8 +1680,7 @@ class LegislatieJustCleaner:
             soup = self.remove_br_tags(soup)
             soup = self.remove_abrogated_annexes(soup)
             soup = self.inject_head(soup)
-            if self.use_ocr:
-                soup = self.replace_base64_img_with_ocr_result_img(soup)
+            soup = self.strip_base64_images(soup)
             soup = self.generate_table_of_contents(soup)
             soup = self.add_ids_and_resolve_links(soup)
             soup = self.insert_source_info(soup, html_path)

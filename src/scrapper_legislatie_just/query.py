@@ -1,23 +1,161 @@
-"""Read-only query layer over ``4-processed/law.db``.
+"""Read-only query layer over the persisted BM25 index.
 
-Every result carries a ``file://.../document.html#anchor`` link that opens the
-original downloaded HTML at the exact article/paragraph. No embeddings: FTS5
-(BM25) for lookup, the reference graph for context expansion.
+Every answer points at a source by **act name + slug + consolidation version**.
+There are no HTML anchors any more: ``3-expanded`` holds Markdown, so a
+citation is the act identity, not a fragment. ANAF form PDFs keep their public
+``/pdfs/...`` link.
+
+No embeddings and no language model: the retriever is a persisted
+:class:`~llama_index.retrievers.bm25.BM25Retriever` built by
+:mod:`bm25_index`.
 """
 
 from __future__ import annotations
 
+import json
 import math
 import re
-import sqlite3
 from pathlib import Path
 from typing import Any
 
-from unidecode import unidecode
-
 from .config import resolve_data_dir, step_dir
+from .text import query_text, stem_tokens, stemmed_query_text, tokens
 
 SPACE_RE = re.compile(r"\s+")
+HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$", re.MULTILINE)
+ARTICLE_RE = re.compile(r"Articolul\s+(\d+(?:\^\d+)?)", re.IGNORECASE)
+PDF_MARKER = "5-pdfs/"
+
+# A persisted BM25 retriever is read-only, so it can be shared by every tool
+# call in the process. Reload only when a rebuild replaced the index.
+_RETRIEVER_CACHE: dict[str, tuple[float, Any]] = {}
+_CORPUS_TEXT_CACHE: dict[str, tuple[float, list[str]]] = {}
+_DF_CACHE: dict[tuple[str, str], int] = {}
+
+
+def _index_stamp(index_dir: Path) -> float:
+    try:
+        return (index_dir / "retriever.json").stat().st_mtime
+    except OSError:
+        return 0.0
+
+
+def _corpus_texts(index_dir: Path, retriever: Any) -> list[str]:
+    """Normalized *original* text of every indexed node, cached per build."""
+    key = str(index_dir)
+    stamp = _index_stamp(index_dir)
+    cached = _CORPUS_TEXT_CACHE.get(key)
+    if cached is not None and cached[0] == stamp:
+        return cached[1]
+    texts = [
+        normalize(str(record.get("original_text") or ""))
+        for record in retriever.corpus
+    ]
+    _CORPUS_TEXT_CACHE[key] = (stamp, texts)
+    return texts
+
+
+def _term_idfs(
+    query: str, index_dir: Path, corpus_texts: list[str]
+) -> list[tuple[str, str, float]]:
+    """``(token, stem, idf)`` for the query words actually present in the corpus.
+
+    The IDF and the exact-token check are computed over the folded *original*
+    text, while BM25 itself runs over the stemmed index. Keeping both makes
+    short, generic questions (e.g. "scutire impozit venit") resolve to the
+    article whose heading or lead actually names the concept.
+    """
+    source_tokens = tokens(query, dedupe=True)
+    stems = stem_tokens(source_tokens)
+    total = len(corpus_texts)
+    terms: list[tuple[str, str, float]] = []
+    for token, stem in zip(source_tokens, stems):
+        cache_key = (str(index_dir), f"{token}:{stem}")
+        df = _DF_CACHE.get(cache_key)
+        if df is None:
+            pattern = re.compile(rf"(?<![a-z0-9]){re.escape(token)}")
+            df = sum(
+                1 for text in corpus_texts if stem in text or pattern.search(text)
+            )
+            _DF_CACHE[cache_key] = df
+        if df:
+            terms.append((token, stem, math.log(1.0 + total / df)))
+    return terms
+
+
+def _rerank(
+    hits: list[Any],
+    query: str,
+    index_dir: Path,
+    corpus_texts: list[str],
+) -> list[tuple[float, Any]]:
+    """Deterministic re-scoring of BM25 candidates; no model involved."""
+    terms = _term_idfs(query, index_dir, corpus_texts)
+    if not terms:
+        return []
+    ranked: list[tuple[float, Any]] = []
+    best_bm25 = max((float(getattr(h, "score", 0.0) or 0.0) for h in hits), default=0.0)
+    for hit in hits:
+        bm25 = float(getattr(hit, "score", 0.0) or 0.0)
+        if bm25 <= 0:
+            continue
+        metadata = dict(hit.node.metadata or {})
+        section = normalize(str(metadata.get("section") or ""))
+        body = str(metadata.get("original_text") or hit.node.get_content())
+        body = normalize(body)
+        lead = body[:300]
+        haystack = " ".join((section, lead, body))
+        score = 0.0
+        matched = 0
+        exact = 0
+        positions: list[int] = []
+        for token, stem, idf in terms:
+            position = haystack.find(token)
+            if position >= 0:
+                exact += 1
+                matched += 1
+                boost = 1.8 if token in section or token in lead else 1.0
+                score += idf * boost
+            elif stem in haystack:
+                position = haystack.find(stem)
+                matched += 1
+                boost = 1.3 if stem in section or stem in lead else 1.0
+                score += idf * 0.5 * boost
+            if position >= 0:
+                positions.append(position)
+        if not matched:
+            continue
+        if exact == len(terms):
+            score *= 1.4
+        if len(positions) > 1:
+            span = max(positions) - min(positions)
+            score += (
+                sum(idf for _token, _stem, idf in terms)
+                * 0.5
+                * max(0.0, 1.0 - span / 600.0)
+            )
+        # BM25 is a useful tie-breaker but must not drown the exact-term signal.
+        score += 2.0 * bm25 / best_bm25 if best_bm25 else 0.0
+        ranked.append((score, hit))
+    ranked.sort(key=lambda item: item[0], reverse=True)
+    return ranked
+
+
+def _load_retriever(index_dir: Path) -> Any:
+    marker = index_dir / "retriever.json"
+    try:
+        stamp = marker.stat().st_mtime
+    except OSError:
+        stamp = 0.0
+    key = str(index_dir)
+    cached = _RETRIEVER_CACHE.get(key)
+    if cached is not None and cached[0] == stamp:
+        return cached[1]
+    from llama_index.retrievers.bm25 import BM25Retriever
+
+    retriever = BM25Retriever.from_persist_dir(str(index_dir))
+    _RETRIEVER_CACHE[key] = (stamp, retriever)
+    return retriever
 
 
 class NotFoundError(KeyError):
@@ -33,90 +171,57 @@ class NotFoundError(KeyError):
         return str(self.args[0]) if self.args else "Not found"
 
 
-# Very small Romanian stop-word list: they would match almost every node and
-# only add noise to BM25 / coverage scores.
-STOPWORDS = {
-    "a", "ai", "al", "ale", "alt", "alta", "as", "asa", "ca", "care", "ce",
-    "cu", "cum", "da", "de", "din", "e", "este", "eu", "fara", "fi", "fie",
-    "in", "intre", "la", "le", "lui", "mai", "mea", "meu", "nu", "o", "pe",
-    "pentru", "prin", "sa", "sau", "se", "si", "sint", "sunt", "un", "una",
-    "unei", "unui", "va", "vor", "sa", "pot", "poate", "trebuie",
-}
-
-
 def normalize(value: str) -> str:
-    return SPACE_RE.sub(
-        " ", re.sub(r"[^a-z0-9]+", " ", unidecode(value).lower())
-    ).strip()
+    return SPACE_RE.sub(" ", re.sub(r"[^a-z0-9]+", " ", value.lower())).strip()
 
 
-def _stem(token: str) -> str:
-    return token[:-2] if len(token) >= 6 and not token.isdigit() else token
-
-
-def _query_tokens(query: str) -> list[tuple[str, str]]:
-    """Return ``(token, stem)`` pairs, dropping stop-words."""
-    parts: list[tuple[str, str]] = []
-    seen: set[str] = set()
-    for token in normalize(query).split():
-        if token in STOPWORDS or len(token) < 2:
-            continue
-        stem = _stem(token)
-        if stem in seen:
-            continue
-        seen.add(stem)
-        parts.append((token, stem))
-    return parts
-
-
-def _fts_term(stem: str) -> str:
-    # Numbers are codes/article numbers: match them exactly, not as prefixes.
-    if stem.isdigit():
-        return f'"{stem}"'
-    return f'"{stem}"*'
-
-
-def _proximity(normalized_text: str, stems: list[str]) -> float:
-    """0..1 bonus when matched stems appear close together in the same node."""
-    positions: list[int] = []
-    for stem in stems:
-        start = normalized_text.find(stem)
-        if start >= 0:
-            positions.append(start)
-    if len(positions) < 2:
-        return 0.0
-    span = max(positions) - min(positions)
-    return max(0.0, 1.0 - span / 600.0)
-
+def leading_int(value: str) -> int:
+    match = re.match(r"\d+", str(value))
+    return int(match.group()) if match else 0
 
 
 class LegalIndex:
     def __init__(
         self,
         data_dir: str | Path | None = None,
-        db_path: str | Path | None = None,
+        processed_dir: str | Path | None = None,
         public_base_url: str | None = None,
     ) -> None:
         self.root = resolve_data_dir(data_dir)
         self.public_base_url = public_base_url
-        self.db_path = (
-            Path(db_path).expanduser().resolve()
-            if db_path
-            else step_dir(self.root, "processed") / "law.db"
+        self.processed_dir = (
+            Path(processed_dir).expanduser().resolve()
+            if processed_dir
+            else step_dir(self.root, "processed")
         )
-        self.graph_path = self.db_path.parent / "graph.db"
-        if not self.db_path.exists():
+        self.index_dir = self.processed_dir / "bm25"
+        self.docs_path = self.processed_dir / "docs.json"
+        self.actions_path = self.processed_dir / "actions.json"
+        self.manifest_path = self.processed_dir / "manifest.json"
+
+        if not self.docs_path.exists() or not self.index_dir.exists():
             raise FileNotFoundError(
-                f"Index not found: {self.db_path}. Run "
-                "'scrapper-legislatie-just-cli process' first."
+                f"Index BM25 not found in {self.processed_dir}. Run the indexer "
+                "with REINDEX_ON_START=1 first (or wait for the scheduled rebuild)."
             )
-        self.connection = sqlite3.connect(
-            f"file:{self.db_path}?mode=ro", uri=True
-        )
-        self.connection.row_factory = sqlite3.Row
+
+        self.documents: list[dict[str, Any]] = json.loads(
+            self.docs_path.read_text(encoding="utf-8")
+        ).get("items", [])
+        self.actions_data: list[dict[str, Any]] = []
+        if self.actions_path.exists():
+            self.actions_data = json.loads(
+                self.actions_path.read_text(encoding="utf-8")
+            ).get("items", [])
+        self._retriever: Any | None = None
+        self._by_slug: dict[str, list[dict[str, Any]]] = {}
+        for doc in self.documents:
+            self._by_slug.setdefault(doc["slug"], []).append(doc)
+        for versions in self._by_slug.values():
+            versions.sort(key=lambda item: item["version"], reverse=True)
 
     def close(self) -> None:
-        self.connection.close()
+        """Kept for API compatibility; the retriever holds no open handle."""
 
     def __enter__(self) -> LegalIndex:
         return self
@@ -125,83 +230,88 @@ class LegalIndex:
         self.close()
 
     # ----------------------------------------------------------------- helpers
-    def link(self, row: sqlite3.Row | dict[str, Any]) -> str:
-        from .links import make_link
+    def _ensure_retriever(self) -> Any:
+        if self._retriever is None:
+            self._retriever = _load_retriever(self.index_dir)
+        return self._retriever
 
-        return make_link(
-            self.root, row["html_rel"], row["anchor"], self.public_base_url
+    def _pdf_link(self, pdf_rel: str | None) -> str | None:
+        if not pdf_rel:
+            return None
+        rel = pdf_rel.replace("\\", "/").lstrip("/")
+        if rel.startswith(PDF_MARKER):
+            rel = rel[len(PDF_MARKER) :]
+        if not self.public_base_url:
+            return (self.root / PDF_MARKER / rel).resolve().as_uri()
+        root = self.public_base_url.rstrip("/")
+        if root.endswith("/laws"):
+            root = root[: -len("/laws")]
+        return f"{root}/pdfs/{rel}"
+
+    def source_line(self, doc: dict[str, Any], section: str | None = None) -> str:
+        """Human citation: act name, slug and consolidation version."""
+        title = doc.get("title") or doc["slug"]
+        line = (
+            f"SURSA: {title} — `{doc['slug']}` — versiunea {doc['version']}"
         )
+        if section:
+            line += f" — {section}"
+        if doc.get("source_url"):
+            line += f" — {doc['source_url']}"
+        pdf = self._pdf_link(doc.get("source_pdf"))
+        if pdf:
+            line += f" — PDF: {pdf}"
+        return line
+
+    def _resolve_doc(self, slug: str, version: str | None = None) -> dict[str, Any]:
+        versions = self._by_slug.get(slug)
+        if not versions:
+            raise NotFoundError(
+                f"Actul '{slug}' nu exista in index. Foloseste docs/select_docs "
+                "pentru slug-uri valide."
+            )
+        if version:
+            for doc in versions:
+                if doc["version"] == version:
+                    return doc
+            raise NotFoundError(
+                f"Versiunea {version} nu exista pentru '{slug}'. "
+                f"Versiuni: {', '.join(doc['version'] for doc in versions[:6])}."
+            )
+        for doc in versions:
+            if doc.get("is_latest"):
+                return doc
+        return versions[0]
+
+    def _doc_meta_for_node(self, metadata: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "slug": metadata.get("slug"),
+            "version": metadata.get("version"),
+            "title": metadata.get("title"),
+            "description": metadata.get("description", ""),
+            "md_rel": metadata.get("md_rel"),
+            "source_url": metadata.get("source_url") or None,
+            "date": metadata.get("date"),
+            "is_latest": bool(metadata.get("is_latest")),
+        }
 
     @staticmethod
-    def _row_text(row: sqlite3.Row) -> str:
-        return SPACE_RE.sub(" ", (row["text"] or "")).strip()
-
-    def _doc_title(self, slug: str) -> str:
-        row = self.connection.execute(
-            "SELECT title FROM docs WHERE slug = ? ORDER BY is_latest DESC LIMIT 1",
-            (slug,),
-        ).fetchone()
-        return row["title"] if row else slug
-
-    def suggest_articles(
-        self, doc: str, number: str, version: str | None = None, limit: int = 5
-    ) -> list[str]:
-        """Article numbers in ``doc`` closest to ``number`` (as a hint)."""
-        def leading_int(value: str) -> int:
-            match = re.match(r"\d+", value)
-            return int(match.group()) if match else 0
-
-        rows = self.connection.execute(
-            """
-            SELECT DISTINCT n.number FROM nodes n
-            JOIN docs d ON d.slug = n.doc_slug AND d.version = n.doc_version
-            WHERE n.doc_slug = ? AND n.kind = 'articol' AND n.number IS NOT NULL
-              AND (? IS NULL OR n.doc_version = ?)
-            ORDER BY d.is_latest DESC, d.version DESC
-            """,
-            (doc, version, version),
-        ).fetchall()
-        target = leading_int(str(number))
-        numbers = {row["number"] for row in rows}
-        return sorted(
-            numbers,
-            key=lambda value: (abs(leading_int(value) - target), value),
-        )[:limit]
-
-    def resolve_node_id(self, node_id: str) -> str:
-        """Accept a full ``slug@version#anchor`` id or a bare ``#anchor``.
-
-        MCP clients often copy the bare anchor from a ``SURSA:`` link. Anchors
-        are not unique across acts, so when several nodes share one we raise a
-        :class:`NotFoundError` listing the full ids instead of guessing.
-        """
-        if self.connection.execute(
-            "SELECT 1 FROM nodes WHERE id = ?", (node_id,)
-        ).fetchone():
-            return node_id
-        if "@" in node_id:
-            return node_id  # a full id that simply isn't in the index
-
-        anchor = node_id.lstrip("#")
-        rows = self.connection.execute(
-            """
-            SELECT n.id FROM nodes n
-            JOIN docs d ON d.slug = n.doc_slug AND d.version = n.doc_version
-            WHERE n.anchor = ?
-            ORDER BY d.is_latest DESC, d.version DESC
-            """,
-            (anchor,),
-        ).fetchall()
-        ids = list(dict.fromkeys(row["id"] for row in rows))
-        if not ids:
-            return node_id
-        if len(ids) == 1:
-            return ids[0]
-        candidates = ", ".join(ids[:5])
-        raise NotFoundError(
-            f"ID-ul {node_id} este ambiguu (ancora folosita in mai multe acte). "
-            f"Foloseste un ID complet, ex: {candidates}."
-        )
+    def _snippet(text: str, query: str, width: int = 700) -> str:
+        folded = query_text(query)
+        words = folded.split()
+        lowered = text.lower()
+        position = -1
+        for word in words:
+            position = lowered.find(word)
+            if position >= 0:
+                break
+        if position < 0:
+            return text[:width]
+        start = max(0, position - width // 3)
+        end = min(len(text), start + width)
+        prefix = "…" if start else ""
+        suffix = "…" if end < len(text) else ""
+        return prefix + text[start:end].strip() + suffix
 
     # ------------------------------------------------------------------ search
     def search(
@@ -212,675 +322,666 @@ class LegalIndex:
         limit: int = 8,
         latest_only: bool = True,
     ) -> list[dict[str, Any]]:
-        parts = _query_tokens(query)
-        if not parts:
+        folded = stemmed_query_text(query)
+        if not folded or limit <= 0:
             return []
-
-        total_nodes = self.connection.execute(
-            "SELECT count(*) FROM nodes"
-        ).fetchone()[0]
-        if not total_nodes:
+        retriever = self._ensure_retriever()
+        corpus_size = len(getattr(retriever, "corpus", []) or [])
+        if not corpus_size:
             return []
-
-        # Drop query terms that do not occur in the corpus (they only turn an
-        # otherwise good query into an empty result) and compute IDF so rare,
-        # specific words outrank frequent ones.
-        terms: list[tuple[str, str, str, float]] = []
-        for token, stem in parts:
-            term = _fts_term(stem)
-            try:
-                df = self.connection.execute(
-                    "SELECT count(*) FROM nodes_fts WHERE nodes_fts MATCH ?",
-                    (term,),
-                ).fetchone()[0]
-            except sqlite3.OperationalError:
-                df = 0
-            if df:
-                idf = math.log(1.0 + total_nodes / df)
-                terms.append((token, stem, term, idf))
-        if not terms:
+        # BM25 only generates candidates. We take every node with a positive
+        # score, then re-rank deterministically before applying the doc/kind
+        # filters — otherwise a doc filter applied to the first 32 hits would
+        # discard the very article the user asked for.
+        retriever.similarity_top_k = corpus_size
+        try:
+            hits = retriever.retrieve(folded)
+        except (ValueError, IndexError):
             return []
-
-        sql = """
-            SELECT n.id, n.doc_slug, n.doc_version, n.kind, n.label,
-                   n.number, n.text, n.path, n.parent, n.anchor,
-                   n.article_id, n.depth, n.order_idx,
-                   d.title, d.html_rel, d.consolidation_date,
-                   d.is_latest, d.source_url,
-                   a.label AS article_label, a.number AS article_number,
-                   a.anchor AS article_anchor,
-                   (SELECT t.text FROM nodes t
-                     WHERE t.article_id = n.article_id
-                       AND t.kind IN ('paragraf', 'alineat', 'litera', 'punct')
-                     ORDER BY t.order_idx
-                     LIMIT 1) AS article_lead,
-                   bm25(nodes_fts, 0.0, 4.0, 2.0, 1.0) AS score,
-                   snippet(nodes_fts, 3, '>>>', '<<<', '…', 36) AS snip
-            FROM nodes_fts
-            JOIN nodes n ON n.id = nodes_fts.node_id
-            JOIN docs d ON d.slug = n.doc_slug AND d.version = n.doc_version
-            LEFT JOIN nodes a ON a.id = n.article_id
-            WHERE nodes_fts MATCH ?
-              AND (? IS NULL OR n.doc_slug = ?)
-              AND (? IS NULL OR n.kind = ?)
-              AND n.kind NOT IN ('titlu', 'capitol', 'sectiune', 'document')
-              AND (? = 0 OR d.is_latest = 1)
-            ORDER BY score
-            LIMIT ?
-        """
-
-        def fetch(match: str, count: int) -> list[sqlite3.Row]:
-            try:
-                return self.connection.execute(
-                    sql,
-                    (
-                        match,
-                        doc,
-                        doc,
-                        kind,
-                        kind,
-                        int(latest_only),
-                        count,
-                    ),
-                ).fetchall()
-            except sqlite3.OperationalError:
-                return []
-
-        collected: dict[str, sqlite3.Row] = {}
-
-        def collect(rows: list[sqlite3.Row]) -> None:
-            for row in rows:
-                collected.setdefault(row["id"], row)
-
-        # 1. Per-term retrieval. This guarantees that a rare term such as
-        #    "programator" is represented even when a combined OR query lets
-        #    frequent words dominate the BM25 ordering.
-        per_term = max(limit * 20, 120)
-        for _token, _stem, term, _idf in terms:
-            collect(fetch(term, per_term))
-
-        # 2. Pairwise AND. A node containing two query terms ("scutire" +
-        #    "impozit") is usually much more relevant than one containing only
-        #    a rare word with a different meaning.
-        if len(terms) > 1:
-            for index, (_, _, left, _) in enumerate(terms):
-                for _, _, right, _ in terms[index + 1 :]:
-                    collect(fetch(f"{left} AND {right}", max(limit * 8, 80)))
-
-        # 3. Full AND for queries where every term is present in one node.
-        if len(terms) > 1:
-            collect(
-                fetch(
-                    " AND ".join(term for _, _, term, _ in terms),
-                    max(limit * 4, 20),
-                )
-            )
-
-        scored: list[tuple[set[str], set[str], float, sqlite3.Row]] = []
-        for row in collected.values():
-            label_text = normalize(row["label"] or "")
-            article_text = normalize(row["article_label"] or "")
-            # The first short paragraph after the article heading is usually
-            # its title ("Scutiri", "Definitia microintreprinderii", ...).
-            # Include it in the label context so a title term outranks an
-            # incidental mention in a later paragraph.
-            if row["article_lead"]:
-                article_text = (
-                    article_text
-                    + " "
-                    + normalize(str(row["article_lead"])[:300])
-                )
-            doc_text = normalize(row["title"] or "")
-            body_text = normalize(row["text"] or "")
-            haystack = " ".join((label_text, article_text, doc_text, body_text))
-            exact_tokens: set[str] = set()
-            matched_stems: set[str] = set()
-            score = 0.0
-            for token, stem, _term, idf in terms:
-                # Full token first: "programator" must not get the same credit
-                # as "programat" (scheduled), even if both share a prefix.
-                exact = bool(
-                    re.search(
-                        rf"(?<![a-z0-9]){re.escape(token)}",
-                        haystack,
-                    )
-                )
-                if exact:
-                    exact_tokens.add(token)
-                    matched_stems.add(stem)
-                    in_label = token in label_text or token in article_text
-                    score += idf * (1.8 if in_label else 1.0)
-                    continue
-                if stem in haystack:
-                    matched_stems.add(stem)
-                    in_label = stem in label_text or stem in article_text
-                    score += idf * 0.45 * (1.3 if in_label else 1.0)
-            if not matched_stems:
-                continue
-            if len(exact_tokens) == len(terms):
-                score *= 1.4
-            idf_sum = sum(idf for _t, stem, _term, idf in terms if stem in matched_stems)
-            score += idf_sum * 0.5 * _proximity(haystack, list(matched_stems))
-            # Definition-shaped nodes ("telemunca - forma de organizare...")
-            # should win against paragraphs that merely mention the term.
-            for token, stem, _term, idf in terms:
-                if body_text.startswith(token + " ") or body_text.startswith(
-                    token + " -"
-                ):
-                    score += idf * 0.8
-                elif body_text.startswith(stem):
-                    score += idf * 0.35
-            score += min(2.0, max(0.0, -row["score"]) / 8.0)
-            scored.append((exact_tokens, matched_stems, score, row))
-
-        # Aggregate per article: an article often answers a question across
-        # several paragraphs, so coverage of the whole article matters more
-        # than the single best paragraph. The best paragraph stays the
-        # clickable evidence anchor.
-        articles: dict[str, dict[str, Any]] = {}
-        for exact_tokens, matched_stems, score, row in scored:
-            key = row["article_id"] or row["id"]
-            bucket = articles.setdefault(
-                key,
-                {
-                    "exact": set(),
-                    "stems": set(),
-                    "nodes": [],
-                },
-            )
-            bucket["exact"] |= exact_tokens
-            bucket["stems"] |= matched_stems
-            bucket["nodes"].append((score, exact_tokens, matched_stems, row))
-
-        ranked: list[tuple[int, int, float, sqlite3.Row]] = []
-        for bucket in articles.values():
-            nodes = bucket["nodes"]
-            best_score = max(item[0] for item in nodes)
-            # The evidence anchor is the paragraph that covers the most query
-            # terms (not merely the highest BM25), so the click lands on the
-            # sentence that actually answers the question.
-            _, _, _, best_row = max(
-                nodes,
-                key=lambda item: (len(item[1]), len(item[2]), item[0]),
-            )
-            # Reward articles where several paragraphs match (e.g. an article
-            # with a title, a general rule and two exceptions).
-            extra = sum(
-                sorted((item[0] for item in nodes), reverse=True)[1:6]
-            )
-            article_score = best_score + 0.35 * extra
-            ranked.append(
-                (
-                    len(bucket["stems"]),
-                    len(bucket["exact"]),
-                    article_score,
-                    best_row,
-                )
-            )
-
-        # If the corpus contains exact matches for the query, do not let
-        # stem-only approximations (e.g. "programat" for "programator") win.
-        max_exact = max((item[1] for item in ranked), default=0)
-        if max_exact > 0:
-            ranked = [item for item in ranked if item[1] > 0]
+        corpus_texts = _corpus_texts(self.index_dir, retriever)
+        ranked = _rerank(hits, query, self.index_dir, corpus_texts)
 
         results: list[dict[str, Any]] = []
-        for stem_coverage, exact_coverage, score, row in sorted(
-            ranked, key=lambda item: (-item[1], -item[0], -item[2])
-        ):
-            if len(results) >= limit:
-                break
-            article_label = row["article_label"]
-            article_link = None
-            if row["article_anchor"]:
-                from .links import make_link
+        seen: set[str] = set()
+        for score, hit in ranked:
+            node = hit.node
+            metadata = dict(node.metadata or {})
+            slug = metadata.get("slug")
+            if not slug:
+                continue
+            if doc is not None and slug != doc:
+                continue
+            if latest_only and not metadata.get("is_latest"):
+                continue
+            node_kind = metadata.get("kind") or "sectiune"
+            if kind is not None and node_kind != kind:
+                continue
 
-                article_link = make_link(
-                    self.root,
-                    row["html_rel"],
-                    row["article_anchor"],
-                    self.public_base_url,
-                )
-            link = self.link(row)
-            if "#" not in link:
-                # A document-level note has no HTML anchor. Fall back to the
-                # article anchor when possible; otherwise skip it so every
-                # returned evidence link is clickable.
-                if not article_link:
-                    continue
-                link = article_link
+            article_number = metadata.get("article_number") or None
+            section = metadata.get("section") or ""
+            key = f"{slug}@{metadata.get('version')}#{article_number or section}"
+            if key in seen:
+                continue
+            seen.add(key)
+
+            doc_meta = self._doc_meta_for_node(metadata)
+            text = str(metadata.get("original_text") or node.get_content())
+            source = self.source_line(doc_meta, section or None)
             results.append(
                 {
-                    "id": row["id"],
-                    "kind": row["kind"],
-                    "label": row["label"],
-                    "number": row["number"],
-                    "text": self._row_text(row),
-                    "snippet": row["snip"],
-                    "path": row["path"],
-                    "doc": row["doc_slug"],
-                    "doc_title": row["title"],
-                    "version": row["doc_version"],
-                    "date": row["consolidation_date"],
-                    "link": link,
-                    "source_url": row["source_url"],
+                    "id": node.node_id,
+                    "kind": node_kind,
+                    "label": section or doc_meta["title"],
+                    "number": article_number,
+                    "text": text,
+                    "snippet": self._snippet(text, query),
+                    "path": f"{doc_meta['title']} > {section}"
+                    if section
+                    else doc_meta["title"],
+                    "doc": slug,
+                    "doc_title": doc_meta["title"],
+                    "version": doc_meta["version"],
+                    "date": doc_meta["date"],
+                    "source_url": doc_meta["source_url"],
+                    "md_rel": doc_meta.get("md_rel"),
+                    "source": source,
                     "score": round(score, 3),
-                    "matched": exact_coverage,
-                    "matched_stem": stem_coverage,
-                    "article_id": row["article_id"],
-                    "article_label": article_label,
-                    "article_number": row["article_number"],
-                    "article_link": article_link,
+                    "article_number": article_number,
+                    "article_label": section if article_number else None,
+                    "article_id": (
+                        f"{slug}@{doc_meta['version']}#art-{article_number}"
+                        if article_number
+                        else node.node_id
+                    ),
                 }
             )
+            if len(results) >= limit:
+                break
         return results
 
-    # --------------------------------------------------------------- rendering
-    def content(self, node_id: str, max_chars: int = 12000) -> dict[str, Any]:
-        node = self.connection.execute(
-            """
-            SELECT n.*, d.title, d.html_rel, d.consolidation_date, d.source_url
-            FROM nodes n
-            JOIN docs d ON d.slug = n.doc_slug AND d.version = n.doc_version
-            WHERE n.id = ?
-            """,
-            (node_id,),
-        ).fetchone()
-        if node is None:
+    # -------------------------------------------------------------- documents
+    def _read_doc(self, doc: dict[str, Any]) -> str:
+        path = self.root / doc["md_rel"]
+        if not path.exists():
             raise NotFoundError(
-                f"Nodul {node_id} nu exista in index. "
-                "Foloseste search sau context pentru a obtine ID-uri valide."
+                f"Fisierul Markdown pentru '{doc['slug']}' lipseste: {path}."
             )
+        return path.read_text(encoding="utf-8", errors="ignore")
 
-        rows = self.connection.execute(
-            """
-            WITH RECURSIVE tree(id, depth) AS (
-                SELECT id, 0 FROM nodes WHERE id = ?
-                UNION ALL
-                SELECT n.id, tree.depth + 1
-                FROM nodes n JOIN tree ON n.parent = tree.id
-            )
-            SELECT n.*, tree.depth AS rel_depth
-            FROM tree JOIN nodes n ON n.id = tree.id
-            ORDER BY n.order_idx
-            """,
-            (node_id,),
-        ).fetchall()
+    @staticmethod
+    def _headings(text: str) -> list[re.Match[str]]:
+        return list(HEADING_RE.finditer(text))
 
-        lines: list[str] = []
-        links: list[dict[str, str]] = []
-        used = 0
-        truncated = False
-        for row in rows:
-            prefix = ""
-            indent = "  " * max(0, row["rel_depth"] - 1)
-            if row["kind"] in {"alineat", "punct", "litera", "linie"} and row["label"]:
-                prefix = f"{row['label']} "
-            text = self._row_text(row)
-            if row["kind"] in {"titlu", "capitol", "sectiune"}:
-                text = ""
-            if row["kind"] == "nota":
-                line = f"> **Nota:** {text}"
-            else:
-                line = f"{indent}{prefix}{text}".rstrip()
-            if not line and row["id"] != node_id:
+    def _article_numbers(self, doc: dict[str, Any]) -> list[str]:
+        text = self._read_doc(doc)
+        numbers: list[str] = []
+        for heading in self._headings(text):
+            match = ARTICLE_RE.search(heading.group(2))
+            if match:
+                numbers.append(match.group(1))
+        return numbers
+
+    def suggest_articles(
+        self, doc: str, number: str, version: str | None = None, limit: int = 5
+    ) -> list[str]:
+        try:
+            meta = self._resolve_doc(doc, version)
+            numbers = self._article_numbers(meta)
+        except (NotFoundError, OSError):
+            return []
+        target = leading_int(str(number))
+        return sorted(
+            set(numbers), key=lambda value: (abs(leading_int(value) - target), value)
+        )[:limit]
+
+    @staticmethod
+    def _section_at(
+        text: str, start: int, level: int, headings: list[re.Match[str]]
+    ) -> str:
+        end = len(text)
+        for heading in headings:
+            if heading.start() <= start:
                 continue
-            if used + len(line) > max_chars and row["id"] != node_id:
-                truncated = True
+            if len(heading.group(1)) <= level:
+                end = heading.start()
                 break
-            lines.append(line)
-            used += len(line)
-            if row["anchor"]:
-                links.append(
-                    {
-                        "label": row["label"] or row["kind"],
-                        "kind": row["kind"],
-                        "link": self.link(
-                            {"html_rel": node["html_rel"], "anchor": row["anchor"]}
-                        ),
-                    }
+        return text[start:end].strip()
+
+    def _extract_article(self, text: str, number: str) -> str | None:
+        target = str(number).strip()
+        headings = self._headings(text)
+        for heading in headings:
+            match = ARTICLE_RE.search(heading.group(2))
+            if match and match.group(1) == target:
+                return self._section_at(
+                    text, heading.start(), len(heading.group(1)), headings
                 )
+        return None
 
-        if node["kind"] == "articol" and node["label"]:
-            lines.insert(0, f"**{node['label']}**")
-
-        body = "\n".join(line for line in lines if line != "")
-        if truncated:
-            body += "\n\n… (articol lung; cere o subdiviziune pentru textul complet)"
-
-        return {
-            "id": node["id"],
-            "kind": node["kind"],
-            "label": node["label"],
-            "path": node["path"],
-            "doc": node["doc_slug"],
-            "doc_title": node["title"],
-            "version": node["doc_version"],
-            "date": node["consolidation_date"],
-            "link": self.link(node),
-            "source_url": node["source_url"],
-            "text": body,
-            "links": links,
-            "truncated": truncated,
-        }
+    def _fallback_window(self, text: str, number: str) -> str | None:
+        pattern = re.compile(
+            rf"(?<![0-9]){re.escape(str(number))}(?![0-9])"
+        )
+        match = pattern.search(text)
+        if not match:
+            return None
+        lines = text[: match.start()].count("\n")
+        all_lines = text.splitlines()
+        start = max(0, lines - 2)
+        end = min(len(all_lines), lines + 4)
+        return "\n".join(all_lines[start:end]).strip()
 
     def article(
         self, doc: str, number: str, version: str | None = None
     ) -> dict[str, Any]:
-        row = self.connection.execute(
-            """
-            SELECT n.id FROM nodes n
-            JOIN docs d ON d.slug = n.doc_slug AND d.version = n.doc_version
-            WHERE n.doc_slug = ? AND n.kind = 'articol' AND n.number = ?
-              AND (? IS NULL OR n.doc_version = ?)
-            ORDER BY d.is_latest DESC, d.version DESC
-            LIMIT 1
-            """,
-            (doc, str(number), version, version),
-        ).fetchone()
-        if row is not None:
-            return self.content(row["id"])
-
-        # Documents without ``S_ART`` structure (e.g. CAEN) store codes in
-        # ordinary paragraphs. Fall back to a search and show the matched
-        # paragraph together with its immediate neighbours (code + label).
-        hits = self.search(
-            str(number),
-            doc=doc,
-            limit=5,
-            latest_only=version is None,
-        )
-        for hit in hits:
-            if version is None or hit["version"] == version:
-                return self.window(hit["id"])
-        near = self.suggest_articles(doc, str(number), version)
-        hint = f" Articole disponibile in apropiere: {', '.join(near)}." if near else ""
-        raise NotFoundError(
-            f"Articolul {number} nu exista in {doc}.{hint} "
-            "Foloseste search sau docs pentru valori valide."
-        )
-
-    def window(
-        self, node_id: str, before: int = 1, after: int = 1
-    ) -> dict[str, Any]:
-        """Render a node plus nearby siblings (useful for table-like docs)."""
-        node = self.connection.execute(
-            """
-            SELECT n.*, d.title, d.html_rel, d.consolidation_date, d.source_url
-            FROM nodes n
-            JOIN docs d ON d.slug = n.doc_slug AND d.version = n.doc_version
-            WHERE n.id = ?
-            """,
-            (node_id,),
-        ).fetchone()
-        if node is None:
-            raise NotFoundError(
-                f"Nodul {node_id} nu exista in index. "
-                "Foloseste search sau context pentru a obtine ID-uri valide."
+        meta = self._resolve_doc(doc, version)
+        text = self._read_doc(meta)
+        section = self._extract_article(text, str(number))
+        if section is None:
+            section = self._fallback_window(text, str(number))
+        if section is None:
+            near = self.suggest_articles(doc, str(number), version)
+            hint = (
+                f" Articole disponibile in apropiere: {', '.join(near)}." if near else ""
             )
-
-        rows = self.connection.execute(
-            """
-            SELECT n.* FROM nodes n
-            WHERE n.doc_slug = ? AND n.doc_version = ?
-              AND n.order_idx BETWEEN ? AND ?
-            ORDER BY n.order_idx
-            """,
-            (
-                node["doc_slug"],
-                node["doc_version"],
-                max(0, node["order_idx"] - before),
-                node["order_idx"] + after,
-            ),
-        ).fetchall()
-
-        lines: list[str] = []
-        links: list[dict[str, str]] = []
-        for row in rows:
-            text = self._row_text(row)
-            if not text:
-                continue
-            prefix = f"{row['label']} " if row["label"] else ""
-            lines.append(f"{prefix}{text}".strip())
-            if row["anchor"]:
-                links.append(
-                    {
-                        "label": row["label"] or row["kind"],
-                        "kind": row["kind"],
-                        "link": self.link(
-                            {"html_rel": node["html_rel"], "anchor": row["anchor"]}
-                        ),
-                    }
-                )
-
+            raise NotFoundError(
+                f"Articolul {number} nu exista in {doc}.{hint} "
+                "Foloseste search sau docs pentru valori valide."
+            )
+        label = f"Articolul {number}"
         return {
-            "id": node["id"],
-            "kind": node["kind"],
-            "label": node["label"] or node["text"],
-            "path": node["path"],
-            "doc": node["doc_slug"],
-            "doc_title": node["title"],
-            "version": node["doc_version"],
-            "date": node["consolidation_date"],
-            "link": self.link(node),
-            "source_url": node["source_url"],
-            "text": "\n".join(lines),
-            "links": links,
+            "id": f"{doc}@{meta['version']}#art-{number}",
+            "kind": "articol",
+            "label": label,
+            "path": f"{meta['title']} > {label}",
+            "doc": doc,
+            "doc_title": meta["title"],
+            "version": meta["version"],
+            "date": meta["date"],
+            "source": self.source_line(meta, label),
+            "source_url": meta.get("source_url"),
+            "text": section,
+            "ancestors": [],
             "truncated": False,
         }
 
+    def _section_by_index(self, text: str, index: int) -> str | None:
+        headings = self._headings(text)
+        if not headings:
+            return text if index == 0 else None
+        if index >= len(headings):
+            return None
+        heading = headings[index]
+        return self._section_at(
+            text, heading.start(), len(heading.group(1)), headings
+        )
+
+    def _node_from_corpus(self, node_id: str) -> dict[str, Any] | None:
+        retriever = self._ensure_retriever()
+        for entry in getattr(retriever, "corpus", []):
+            if entry.get("node_id") != node_id:
+                continue
+            metadata = entry
+            # bm25s stores the serialized node under ``_node_content``.
+            content = entry.get("_node_content")
+            if content:
+                try:
+                    from llama_index.core.vector_stores.utils import (
+                        metadata_dict_to_node,
+                    )
+
+                    node = metadata_dict_to_node(json.loads(content))
+                    metadata = dict(node.metadata or {})
+                    text = str(metadata.get("original_text") or node.get_content())
+                except (ValueError, TypeError):
+                    text = str(entry.get("original_text") or "")
+            else:
+                text = str(entry.get("original_text") or "")
+            doc_meta = self._doc_meta_for_node(metadata)
+            section = metadata.get("section") or ""
+            return {
+                "id": node_id,
+                "kind": metadata.get("kind") or "sectiune",
+                "label": section or doc_meta["title"],
+                "path": f"{doc_meta['title']} > {section}"
+                if section
+                else doc_meta["title"],
+                "doc": doc_meta["slug"],
+                "doc_title": doc_meta["title"],
+                "version": doc_meta["version"],
+                "date": doc_meta["date"],
+                "source": self.source_line(doc_meta, section or None),
+                "source_url": doc_meta["source_url"],
+                "text": text,
+                "ancestors": [],
+                "truncated": False,
+            }
+        return None
+
     def show(self, node_id: str) -> dict[str, Any]:
-        node_id = self.resolve_node_id(node_id)
-        data = self.content(node_id)
-        ancestors: list[dict[str, str]] = []
-        parent = self.connection.execute(
-            "SELECT parent FROM nodes WHERE id = ?", (node_id,)
-        ).fetchone()
-        seen: set[str] = set()
-        while parent and parent["parent"] and parent["parent"] not in seen:
-            seen.add(parent["parent"])
-            row = self.connection.execute(
-                "SELECT id, kind, label, anchor, doc_slug, doc_version FROM nodes WHERE id = ?",
-                (parent["parent"],),
-            ).fetchone()
-            if row is None:
-                break
-            doc = self.connection.execute(
-                "SELECT html_rel FROM docs WHERE slug=? AND version=?",
-                (row["doc_slug"], row["doc_version"]),
-            ).fetchone()
-            ancestors.append(
-                {
-                    "id": row["id"],
-                    "kind": row["kind"],
-                    "label": row["label"] or row["kind"],
-                    "link": self.link(
-                        {"html_rel": doc["html_rel"], "anchor": row["anchor"]}
-                    ),
-                }
-            )
-            parent = self.connection.execute(
-                "SELECT parent FROM nodes WHERE id = ?", (row["id"],)
-            ).fetchone()
-        data["ancestors"] = list(reversed(ancestors))
-        data["refs"] = self.neighbors(node_id)
-        return data
-
-    def neighbors(
-        self, node_id: str, subtree: bool = False
-    ) -> dict[str, list[dict[str, Any]]]:
-        """Read incoming/outgoing citations from ``graph.db`` (GraphQLite)."""
-        from .graph import cypher_literal, run_cypher
-
-        node_id = self.resolve_node_id(node_id)
-        row = self.connection.execute(
-            "SELECT article_id FROM nodes WHERE id = ?", (node_id,)
-        ).fetchone()
-        if row is None:
+        """Show a node id returned by ``search`` (``slug@version#...``)."""
+        if "@" not in node_id or "#" not in node_id:
             raise NotFoundError(
-                f"Nodul {node_id} nu exista in index. "
-                "Foloseste search sau context pentru a obtine ID-uri valide."
+                f"ID invalid: {node_id}. Foloseste un id din rezultatele search, "
+                "de forma 'slug@YYYY-MM-DD#art-N'."
             )
-        article_id = row["article_id"] or node_id
-        node_lit = cypher_literal(node_id)
-        article_lit = cypher_literal(article_id)
+        base, _, suffix = node_id.partition("#")
+        slug, _, version = base.partition("@")
+        meta = self._resolve_doc(slug, version or None)
+        article_match = re.match(r"art-(\d+(?:\^\d+)?)", suffix)
+        if article_match:
+            return self.article(slug, article_match.group(1), version or None)
 
-        def query(direction: str) -> list[dict[str, Any]]:
-            if direction == "outgoing":
-                where_var, target = "a", "b"
-            else:
-                where_var, target = "b", "a"
-            if subtree:
-                where = (
-                    f"({where_var}.id = {node_lit} OR "
-                    f"{where_var}.article_id = {article_lit})"
-                )
-            else:
-                where = f"{where_var}.id = {node_lit}"
-            cypher = (
-                f"MATCH (a)-[r]->(b) "
-                f"WHERE {where} AND r.aggregate = 0 "
-                f"RETURN type(r) AS edge_type, r.rel AS rel, r.raw AS raw, "
-                f"r.confidence AS confidence, {target}.id AS target, "
-                f"{target}.label AS label, {target}.kind AS kind, "
-                f"{target}.doc AS doc, {target}.doc_title AS doc_title, "
-                f"{target}.anchor AS anchor, {target}.link AS link"
+        found = self._node_from_corpus(node_id)
+        if found is not None:
+            return found
+
+        text = self._read_doc(meta)
+        index = 0
+        match = re.match(r"sec-(\d+)", suffix)
+        if match:
+            index = int(match.group(1))
+        section = self._section_by_index(text, index)
+        if section is None:
+            raise NotFoundError(
+                f"Nodul {node_id} nu exista in index. Foloseste search pentru "
+                "id-uri valide."
             )
-            try:
-                return run_cypher(
-                    self.graph_path, cypher, base_url=self.public_base_url
-                )
-            except FileNotFoundError as ex:
-                raise FileNotFoundError(
-                    f"Citation graph not found: {self.graph_path}. Run "
-                    "'scrapper-legislatie-just-cli process' first."
-                ) from ex
-
-        def convert(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-            seen: set[tuple] = set()
-            out: list[dict[str, Any]] = []
-            for row in rows:
-                rel = row["rel"] or (row["edge_type"] or "").lower()
-                key = (rel, row["target"], row["raw"])
-                if key in seen:
-                    continue
-                seen.add(key)
-                out.append(
-                    {
-                        "rel": rel,
-                        "raw": row["raw"],
-                        "confidence": row["confidence"],
-                        "target": row["target"],
-                        "label": row["label"],
-                        "kind": row["kind"],
-                        "doc": row["doc"],
-                        "doc_title": row["doc_title"],
-                        "link": row["link"],
-                    }
-                )
-            return out
-
+        label = section.splitlines()[0].lstrip("# ").strip()
         return {
-            "outgoing": convert(query("outgoing")),
-            "incoming": convert(query("incoming")),
+            "id": node_id,
+            "kind": "sectiune",
+            "label": label,
+            "path": f"{meta['title']} > {label}",
+            "doc": slug,
+            "doc_title": meta["title"],
+            "version": meta["version"],
+            "date": meta["date"],
+            "source": self.source_line(meta, label),
+            "source_url": meta.get("source_url"),
+            "text": section,
+            "ancestors": [],
+            "truncated": False,
         }
 
-    def docs(self) -> list[dict[str, Any]]:
-        rows = self.connection.execute(
-            """
-            SELECT slug, version, title, description, html_rel, source_url,
-                   consolidation_date, is_latest
-            FROM docs
-            ORDER BY slug, is_latest DESC, version DESC
-            """
-        ).fetchall()
+    def docs(self, latest_only: bool = True) -> list[dict[str, Any]]:
+        from .research import classify_family
+
+        rows = [doc for doc in self.documents if not latest_only or doc.get("is_latest")]
+        rows.sort(key=lambda item: (item["slug"], not item.get("is_latest"), item["version"]))
         return [
             {
-                "slug": row["slug"],
-                "version": row["version"],
-                "title": row["title"],
-                "description": row["description"],
-                "link": self.link({"html_rel": row["html_rel"], "anchor": None}),
-                "source_url": row["source_url"],
-                "date": row["consolidation_date"],
-                "is_latest": bool(row["is_latest"]),
+                "slug": doc["slug"],
+                "version": doc["version"],
+                "title": doc["title"],
+                "description": doc.get("description", ""),
+                "markdown": doc["md_rel"],
+                "source_url": doc.get("source_url"),
+                "date": doc["date"],
+                "is_latest": bool(doc.get("is_latest")),
+                "family": classify_family(doc["slug"], doc.get("title") or ""),
             }
-            for row in rows
+            for doc in rows
         ]
 
+    # ---------------------------------------------------------------- research
+    def select_docs(self, question: str, max_docs: int = 12) -> dict[str, Any]:
+        """Narrow the catalogue to the acts worth searching for ``question``."""
+        from .research import (
+            FAMILY_LABELS,
+            _expand_companions,
+            score_docs,
+            select_families,
+            topic_families,
+        )
+
+        docs = self.docs(latest_only=True)
+        topics, required = topic_families(question)
+        ranked = score_docs(question, docs)
+        by_slug = {doc["slug"]: doc for doc in docs}
+        text_hits = [
+            hit
+            for hit in self.search(question, limit=50)
+            if by_slug.get(hit["doc"], {}).get("family") != "formulare"
+        ]
+        if text_hits:
+            top_score = ranked[0][0] if ranked else max(
+                hit["score"] for hit in text_hits
+            )
+            merged: dict[str, tuple[float, set[str], dict[str, Any]]] = {
+                doc["slug"]: (score, matched, doc)
+                for score, matched, doc in ranked
+            }
+            seen_docs: set[str] = set()
+            for hit in text_hits:
+                doc = by_slug.get(hit["doc"])
+                if doc is None or doc["slug"] in seen_docs:
+                    continue
+                seen_docs.add(doc["slug"])
+                bonus = top_score * (1.0 - 0.04 * (len(seen_docs) - 1))
+                if doc["family"] == "formulare":
+                    bonus *= 0.5
+                previous = merged.get(doc["slug"])
+                if previous:
+                    score, matched, _ = previous
+                    merged[doc["slug"]] = (score + bonus * 0.5, matched, doc)
+                else:
+                    merged[doc["slug"]] = (bonus, set(), doc)
+            ranked = sorted(
+                merged.values(), key=lambda item: (-item[0], item[2]["slug"])
+            )
+        max_docs = max(4, min(max_docs, 20))
+        shortlist = select_families(
+            ranked, required, max_docs=max_docs, question=question, topics=topics
+        )
+        shortlist = _expand_companions(shortlist, docs)
+        covered = {doc["family"] for doc in shortlist}
+        return {
+            "question": question,
+            "topics": topics,
+            "required_families": required,
+            "missing_families": [f for f in required if f not in covered],
+            "family_labels": FAMILY_LABELS,
+            "docs": shortlist,
+            "total_docs": len(docs),
+        }
+
+    def research(
+        self,
+        question: str,
+        limit: int = 3,
+        max_docs: int = 10,
+        compact: bool = False,
+    ) -> str:
+        """Evidence package across source families, with explicit gaps."""
+        from .research import FAMILY_LABELS, scenario_expansions
+
+        plan = self.select_docs(question, max_docs=max_docs + 4)
+        limit = max(1, min(limit, 6))
+        blocks: list[str] = [
+            "# Cercetare pe familii de surse",
+            "",
+            f"Întrebare: **{question}**",
+            "",
+            "Selecție de acte după descriere/titlu, apoi căutare de text în "
+            "fiecare. Citește textul și declară explicit orice familie rămasă "
+            "fără dovezi.",
+            "",
+        ]
+        if compact:
+            blocks.extend(
+                [
+                    "Mod compact: pasaje scurte. Pentru text integral foloseste "
+                    "`article`/`show` pe articolele indicate.",
+                    "",
+                ]
+            )
+        if plan["topics"]:
+            blocks.append(
+                "Teme detectate: "
+                + ", ".join(plan["topics"])
+                + ". Familii obligatorii de verificat: "
+                + ", ".join(
+                    FAMILY_LABELS.get(f, f) for f in plan["required_families"]
+                )
+                + "."
+            )
+            blocks.append("")
+
+        evidence_families: set[str] = set()
+        per_doc_hits: list[tuple[dict[str, Any], list[dict[str, Any]]]] = []
+        for doc in plan["docs"]:
+            if doc["family"] == "formulare":
+                continue
+            hits = self.search(question, doc=doc["slug"], limit=limit)
+            if hits:
+                evidence_families.add(doc["family"])
+                per_doc_hits.append((doc, hits))
+
+        narrative = {
+            "pfa", "srl", "ii", "if", "firma", "firmei", "imi", "mie", "meu",
+            "mea", "am", "avem", "facturez", "facturezi", "doresc", "vreau",
+            "multumesc",
+        }
+        concept_tokens = [token for token in tokens(question) if token not in narrative]
+        concept_query = " ".join(concept_tokens)
+        if "tva" in plan["topics"]:
+            concept_query += " client neimpozabil"
+        expansions = scenario_expansions(question, plan["topics"])
+        if expansions:
+            concept_query += " " + " ".join(expansions)
+        if concept_query:
+            second_docs = [
+                doc
+                for doc in plan["docs"]
+                if doc["family"] in plan["required_families"]
+            ]
+            second_limit = 4 if expansions else 3
+            for doc in second_docs:
+                extra = self.search(concept_query, doc=doc["slug"], limit=second_limit)
+                if not extra:
+                    continue
+                existing = next(
+                    (hits for d, hits in per_doc_hits if d["slug"] == doc["slug"]),
+                    None,
+                )
+                if existing is None:
+                    evidence_families.add(doc["family"])
+                    per_doc_hits.append((doc, extra))
+                else:
+                    for hit in extra:
+                        if all(other["id"] != hit["id"] for other in existing):
+                            existing.append(hit)
+
+        for doc, hits in per_doc_hits:
+            family = FAMILY_LABELS.get(doc["family"], doc["family"])
+            blocks.append(f"## [{family}] {doc['title']}")
+            blocks.append(
+                f"Act: `{doc['slug']}` · versiune: {doc['date']}"
+            )
+            blocks.append("")
+            for hit in hits:
+                title = hit["article_label"] or hit["label"] or hit["kind"]
+                blocks.append(f"### {title}")
+                blocks.append(hit["source"])
+                blocks.append("")
+                text = SPACE_RE.sub(" ", hit["text"]).strip()
+                if compact:
+                    excerpt = text[:320]
+                    if len(text) > 320:
+                        excerpt = excerpt.rstrip() + " …"
+                    blocks.append(excerpt)
+                else:
+                    blocks.append(hit["text"][:1600])
+                blocks.append("")
+
+            top = hits[0]
+            if top.get("article_number"):
+                try:
+                    article = self.article(
+                        top["doc"], top["article_number"], top.get("version")
+                    )
+                    if article["text"][:1600] != top["text"][:1600]:
+                        blocks.append(
+                            "**Articolul integral (context pentru excepții):**"
+                        )
+                        blocks.append(article["source"])
+                        blocks.append("")
+                        blocks.append(article["text"])
+                        blocks.append("")
+                except NotFoundError:
+                    pass
+
+        gaps = [
+            family
+            for family in plan["required_families"]
+            if family not in evidence_families
+        ]
+        gaps += [f for f in plan["missing_families"] if f not in gaps]
+        blocks.append("## bilanț pe familii")
+        for family in plan["required_families"]:
+            label = FAMILY_LABELS.get(family, family)
+            if family in evidence_families:
+                blocks.append(f"- {label}: dovezi găsite mai sus.")
+            else:
+                blocks.append(
+                    f"- {label}: FĂRĂ dovezi. Caută din nou cu sinonime și "
+                    f"`search(doc=...)` pe actele din familie; dacă tot nu "
+                    "există text, spune explicit în răspuns că sursa nu "
+                    "acoperă acest aspect."
+                )
+        blocks.append("")
+
+        forms = self.actions(question, limit=3)
+        if expansions:
+            seen_forms = {form["code"] for form in forms}
+            for form in self.actions(" ".join(expansions), limit=3):
+                if form["code"] not in seen_forms and len(forms) < 5:
+                    forms.append(form)
+                    seen_forms.add(form["code"])
+        if forms:
+            blocks.append("## Fișe de acțiune (declarații ANAF)")
+            for form in forms:
+                blocks.append(
+                    f"- {form['code']} — {form['title'][:160]} — SURSA: {form['link']}"
+                )
+            blocks.append("")
+        return "\n".join(blocks)
+
+    # ----------------------------------------------------------------- actions
+    @staticmethod
+    def _action_haystack(action: dict[str, Any]) -> str:
+        code = str(action.get("code") or "")
+        compact = re.sub(r"[^a-z0-9]", "", code.lower())
+        return (
+            f"{code} {compact} d{compact} declaratia-{compact} "
+            f"{action.get('title') or ''} {action.get('description') or ''}"
+        ).lower()
+
+    def actions(
+        self, query: str | None = None, limit: int = 10
+    ) -> list[dict[str, Any]]:
+        """ANAF declaration sheets: the form to complete and upload in SPV."""
+        limit = max(1, min(limit, 50))
+        if not self.actions_data:
+            return []
+
+        def item(action: dict[str, Any], score: float) -> dict[str, Any]:
+            return {
+                "doc_slug": action["doc_slug"],
+                "code": action["code"],
+                "title": action.get("title") or "",
+                "description": action.get("description") or "",
+                "source_url": action.get("source_url"),
+                "link": self._pdf_link(action.get("pdf_rel")),
+                "xfa": bool(action.get("xfa")),
+                "score": score,
+            }
+
+        if not query:
+            return [item(action, 0.0) for action in self.actions_data[:limit]]
+
+        query_tokens = set(tokens(query, dedupe=True))
+        if not query_tokens:
+            return []
+        matches: list[tuple[float, dict[str, Any]]] = []
+        for action in self.actions_data:
+            haystack = self._action_haystack(action)
+            score = sum(1.0 for token in query_tokens if token in haystack)
+            if score:
+                matches.append((score, action))
+        matches.sort(key=lambda entry: (-entry[0], str(entry[1]["code"])))
+        return [item(action, score) for score, action in matches[:limit]]
+
     # ----------------------------------------------------------------- context
+    def content(self, node_id: str, max_chars: int = 12000) -> dict[str, Any]:
+        data = self.show(node_id)
+        text = data["text"]
+        if len(text) > max_chars:
+            data = dict(data)
+            data["text"] = text[:max_chars] + "\n\n… (text trunchiat)"
+            data["truncated"] = True
+        return data
+
     def context(
         self, question: str, limit: int = 4, doc: str | None = None
     ) -> str:
         hits = self.search(question, doc=doc, limit=max(limit * 3, 8))
-        if not hits:
-            return (
-                "Nu am găsit pasaje în corpus pentru această întrebare.\n"
-                "Încearcă sinonime sau numele actului."
-            )
+        no_text_hits = not hits
 
-        articles: list[str] = []
+        from .research import classify_family, topic_families
+
+        _topics, required = topic_families(question) if doc is None else ([], [])
+        picked: list[tuple[str, dict[str, Any]]] = []
+        picked_families: set[str] = set()
+
+        def pick(hit: dict[str, Any]) -> None:
+            target = hit.get("article_id") or hit["id"]
+            if any(target == existing for existing, _ in picked):
+                return
+            picked.append((target, hit))
+            picked_families.add(classify_family(hit["doc"], hit["doc_title"]))
+
+        for family in required:
+            if family in picked_families or len(picked) >= limit:
+                continue
+            for hit in hits:
+                if classify_family(hit["doc"], hit["doc_title"]) == family:
+                    pick(hit)
+                    break
         for hit in hits:
-            article_id = self.connection.execute(
-                "SELECT article_id FROM nodes WHERE id = ?", (hit["id"],)
-            ).fetchone()
-            target = (
-                article_id["article_id"]
-                if article_id and article_id["article_id"]
-                else hit["id"]
-            )
-            if target not in articles:
-                articles.append(target)
-            if len(articles) >= limit:
+            if len(picked) >= limit:
                 break
+            pick(hit)
 
         blocks: list[str] = [
             "# Evidențe din corpus",
             "",
             f"Întrebare: **{question}**",
             "",
-            "Fiecare link deschide HTML-ul original la ancora exactă.",
+            "Fiecare sursă este citată cu numele actului, slug-ul și versiunea "
+            "consolidată. Formularele ANAF păstrează linkul PDF public.",
             "",
         ]
-        for index, article_id in enumerate(articles, 1):
-            data = self.content(article_id, max_chars=8000)
-            refs = self.neighbors(article_id, subtree=True)
+        missing = [f for f in required if f not in picked_families]
+        if missing:
+            from .research import FAMILY_LABELS
+
+            blocks.append(
+                "**Familii obligatorii fără dovezi în acest pachet:** "
+                + ", ".join(FAMILY_LABELS.get(f, f) for f in missing)
+                + ". Caută separat cu `search(doc=...)`/`research` înainte de "
+                "a concluziona; nu răspunde dintr-o singură familie."
+            )
+            blocks.append("")
+        if no_text_hits:
+            blocks.append(
+                "Nu am găsit pasaje de lege pentru această întrebare. "
+                "Verifică mai jos fișele de acțiune; altfel încearcă sinonime "
+                "sau numele actului."
+            )
+            blocks.append("")
+        for index, node_id in enumerate((target for target, _ in picked), 1):
+            data = self.content(node_id, max_chars=8000)
             blocks.append(f"## {index}. {data['doc_title']} — {data['label']}")
-            blocks.append(f"SURSA: {data['link']}")
-            if data["date"]:
-                blocks.append(f"Versiune consolidată: {data['date']}")
+            blocks.append(data["source"])
             blocks.append("")
             blocks.append(data["text"])
             blocks.append("")
-
-            useful = [
-                ref
-                for ref in refs["outgoing"]
-                if ref["rel"] in {"citat", "mentioneaza"} and ref["link"]
-            ][:8]
-            if useful:
-                blocks.append("**Trimiteri din acest text:**")
-                for ref in useful:
-                    label = ref["label"] or ref["raw"] or ref["target"]
-                    blocks.append(f"- {label} — {ref['link']}")
-                blocks.append("")
-
-            cited_by = [
-                ref
-                for ref in refs["incoming"]
-                if ref["rel"] == "citat" and ref["link"]
-            ][:5]
-            if cited_by:
-                blocks.append("**Este citat de:**")
-                for ref in cited_by:
-                    label = ref["label"] or ref["raw"] or ref["target"]
-                    blocks.append(f"- {label} — {ref['link']}")
-                blocks.append("")
-            if data["truncated"]:
+            if data.get("truncated"):
                 blocks.append(
-                    "Text trunchiat. Cere `show` pe subdiviziuni pentru restul."
+                    "Text trunchiat. Cere `show`/`article` pentru restul."
                 )
                 blocks.append("")
+
+        forms = self.actions(question, limit=3)
+        if forms:
+            blocks.append("## Fise de actiune (declaratii ANAF)")
+            for form in forms:
+                blocks.append(
+                    f"- {form['code']} — {form['title'][:160]} — SURSA: {form['link']}"
+                )
+            blocks.append("")
         return "\n".join(blocks)
 
     # ---------------------------------------------------------------- markdown
@@ -891,19 +992,12 @@ class LegalIndex:
         for index, item in enumerate(results, 1):
             title = item["article_label"] or item["label"] or item["kind"]
             lines.append(f"### {index}. {item['doc_title']} — {title}")
-            lines.append(f"SURSA: {item['link']}")
-            if item["article_link"] and item["article_link"] != item["link"]:
-                lines.append(f"ARTICOL: {item['article_link']}")
+            lines.append(item["source"])
             lines.append(
-                f"Fragment: {item['kind']} · potriviri: {item['matched']}"
+                f"Fragment: {item['kind']} · scor BM25: {item['score']}"
             )
-            if item["date"]:
-                lines.append(f"Versiune: {item['date']}")
             lines.append("")
-            snippet = (item["snippet"] or item["text"][:600]).replace(
-                ">>>", "**"
-            ).replace("<<<", "**")
-            lines.append(snippet)
+            lines.append(item["snippet"] or item["text"][:600])
             lines.append("")
         return "\n".join(lines)
 

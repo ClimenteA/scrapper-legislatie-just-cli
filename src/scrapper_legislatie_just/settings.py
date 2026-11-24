@@ -17,14 +17,12 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 CommaList = Annotated[list[str], NoDecode]
 
 DEFAULT_HOSTS = [
-    "mcp.chatcodfiscal.ro",
-    "mcp.chatcodfiscal.ro:*",
     "localhost",
     "localhost:*",
     "127.0.0.1",
     "127.0.0.1:*",
 ]
-DEFAULT_ORIGINS = ["https://mcp.chatcodfiscal.ro", "http://localhost:8000"]
+DEFAULT_ORIGINS = ["http://localhost:8000"]
 
 
 def _split_csv(value: str | list[str] | None) -> list[str]:
@@ -45,9 +43,7 @@ class Settings(BaseSettings):
         case_sensitive=False,
     )
 
-    public_laws_base_url: AnyHttpUrl = AnyHttpUrl(
-        "https://mcp.chatcodfiscal.ro/laws"
-    )
+    public_laws_base_url: AnyHttpUrl = AnyHttpUrl("http://localhost:8000/laws")
     mcp_allowed_hosts: CommaList = Field(default_factory=lambda: list(DEFAULT_HOSTS))
     mcp_allowed_origins: CommaList = Field(
         default_factory=lambda: list(DEFAULT_ORIGINS)
@@ -59,7 +55,6 @@ class Settings(BaseSettings):
     web_port: int = Field(default=8000, ge=1, le=65535)
 
     reindex_on_start: bool = False
-    reindex_ocr: bool = True
 
     @field_validator("mcp_allowed_hosts", "mcp_allowed_origins", mode="before")
     @classmethod

@@ -1,6 +1,6 @@
 import random
+import json
 import shutil
-import sqlite3
 import subprocess
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -352,8 +352,8 @@ class LegislatieJustDownloader:
                 continue
             # Only touch directories that look like an expanded source.
             looks_like_source = (path / f"toc-{path.name}.json").exists() or any(
-                path.glob("*.html")
-            )
+                path.glob("*.md")
+            ) or any(path.glob("*.html"))
             if looks_like_source:
                 orphans["expanded"].append(path)
 
@@ -361,35 +361,39 @@ class LegislatieJustDownloader:
 
     def _index_has_orphans(self, known_slugs: set[str]) -> bool:
         """Check whether the processed index still contains removed slugs."""
-        db_path = self.processed_dir / "law.db"
-        if not known_slugs or not db_path.exists():
+        docs_path = self.processed_dir / "docs.json"
+        if not known_slugs or not docs_path.exists():
             return False
         try:
-            connection = sqlite3.connect(
-                f"{db_path.resolve().as_uri()}?mode=ro", uri=True
-            )
-            try:
-                rows = connection.execute("SELECT DISTINCT slug FROM docs").fetchall()
-            finally:
-                connection.close()
-        except sqlite3.Error:
+            items = json.loads(docs_path.read_text(encoding="utf-8")).get("items", [])
+        except (OSError, json.JSONDecodeError):
             return False
-        return any(row[0] not in known_slugs for row in rows)
+        return any(item.get("slug") not in known_slugs for item in items)
 
     def _invalidate_processed_index(self) -> bool:
         """Delete processed artifacts so the next ``process`` rebuilds them."""
         invalidated = False
         for name in (
+            "bm25",
+            "bm25.tmp",
+            "docs.json",
+            "docs.json.tmp",
+            "actions.json",
+            "actions.json.tmp",
+            "manifest.json",
+            "catalog.json",
             "law.db",
             "law.db.tmp",
             "graph.db",
-            "manifest.json",
-            "catalog.json",
         ):
             artifact = self.processed_dir / name
-            if artifact.exists():
+            if not artifact.exists():
+                continue
+            if artifact.is_dir():
+                shutil.rmtree(artifact)
+            else:
                 artifact.unlink()
-                invalidated = True
+            invalidated = True
         return invalidated
 
     def remove_orphan_sources(self) -> dict:

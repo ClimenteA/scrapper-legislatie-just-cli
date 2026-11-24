@@ -28,7 +28,7 @@ class Sursa(BaseModel):
 
 class SursaConsolidata(BaseModel):
     numar_link: int
-    html_name: str
+    md_name: str
     data_consolidarii: date
     link: str | None = None
 
