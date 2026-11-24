@@ -1,4 +1,13 @@
 {
   "nume": "LEGEA NR. 200/2021 PRIVIND APLICAREA",
-  "descriere": "Act sintetic care trimite la alt act."
+  "descriere": "Act sintetic care trimite la alt act.",
+  "slug": "act-b",
+  "consolidari": [
+    {
+      "numar_link": 200,
+      "md_name": "200-act-b-2021-05-05.md",
+      "data_consolidarii": "2021-05-05",
+      "link": "https://legislatie.just.ro/Public/DetaliiDocument/200"
+    }
+  ]
 }

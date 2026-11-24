@@ -8,7 +8,7 @@ start:
 stop:
 	docker compose down
 
-# Build the image (OCR uses CPU-only torch; no nvidia/CUDA wheels).
+# Build the image (LiteParse OCR + BM25; no torch, no CUDA wheels).
 build:
 	docker compose build
 

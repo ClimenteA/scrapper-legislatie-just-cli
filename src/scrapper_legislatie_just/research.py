@@ -24,7 +24,17 @@ import math
 import re
 from typing import Any
 
-from .query import _query_tokens, normalize
+from .query import normalize
+from .text import tokens as _tokens
+
+
+def _query_tokens(query: str) -> list[tuple[str, str]]:
+    """``(token, stem)`` pairs used by the catalogue scorer.
+
+    The BM25 corpus is folded and not stemmed, so the token is its own stem;
+    the pair shape is kept so the rest of the module stays unchanged.
+    """
+    return [(token, token) for token in _tokens(query, dedupe=True)]
 
 # Ordered family definitions: the first matching pattern wins. Patterns are
 # matched against the normalized ``slug + title`` of each act. Families are

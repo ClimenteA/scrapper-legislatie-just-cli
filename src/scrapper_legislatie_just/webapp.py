@@ -9,8 +9,8 @@ Endpoints:
 * ``POST /mcp``          — Streamable HTTP MCP, bearer-token protected
 * ``POST /admin/tokens`` — issue a signed token (admin_secret_key in body)
 * ``GET  /health``       — liveness + index presence
-* ``GET  /laws/3-expanded/*`` — public expanded legal HTML
-* ``GET  /pdfs/*``        — public source PDFs
+* ``GET  /laws/3-expanded/*`` — public expanded legal Markdown
+* ``GET  /pdfs/*``        — public source PDFs (ANAF forms, EU acts)
 
 The personal-file tools are deliberately NOT exposed here: the service keeps
 no user data on disk and exposes only the read-only, stateless legal tools.
@@ -18,6 +18,7 @@ no user data on disk and exposes only the read-only, stateless legal tools.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -30,6 +31,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import BaseModel
 
 from scrapper_legislatie_just.config import resolve_data_dir, step_dir
+from scrapper_legislatie_just.logger import log
 
 from .auth import check_admin_secret, issue_token, parse_expiry, verify_token
 from .mcp_http import mcp
@@ -59,6 +61,15 @@ mcp_app = mcp.streamable_http_app(
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # WebSettings validation fails fast if the secrets are missing or invalid.
     get_web_settings()
+    # Pull the OCR model once, into the persistent data directory. A network
+    # failure must not keep the API down: PDF ingestion is retried by the
+    # indexer, while text queries keep working from the existing index.
+    try:
+        from scrapper_legislatie_just.pdf_convert import ensure_ocr_model
+
+        await asyncio.to_thread(ensure_ocr_model)
+    except Exception as ex:  # noqa: BLE001 - startup must survive offline hosts
+        log.warning(f"Modelul LiteParse nu a putut fi pregatit la pornire: {ex}")
     async with mcp.session_manager.run():
         yield
 
@@ -133,10 +144,12 @@ def create_token(payload: TokenRequest) -> dict[str, Any]:
 @app.get("/health", tags=["ops"])
 def health() -> dict[str, Any]:
     root = resolve_data_dir()
+    processed = step_dir(root, "processed")
     return {
         "status": "ok",
-        "index": (step_dir(root, "processed") / "law.db").exists(),
-        "graph": (step_dir(root, "processed") / "graph.db").exists(),
+        "index": (processed / "bm25").exists(),
+        "documents": (processed / "docs.json").exists(),
+        "actions": (processed / "actions.json").exists(),
     }
 
 

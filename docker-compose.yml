@@ -10,10 +10,11 @@ services:
       - "8000:8000"
     environment:
       SCRAPPER_DATA_DIR: /data/legislatie-descarcata
+      # OCR model for PDF -> Markdown, downloaded once into the data dir.
+      LITEPARSE_MODEL_DIR: /data/legislatie-descarcata/models
       ADMIN_SECRET_KEY: ${ADMIN_SECRET_KEY:?set ADMIN_SECRET_KEY in .env}
       TOKEN_SIGNING_SECRET: ${TOKEN_SIGNING_SECRET:?set TOKEN_SIGNING_SECRET in .env}
-      # Prefix used for every link returned by the MCP tools. FastAPI serves
-      # the expanded HTML and source PDFs from this same host.
+      # Base URL used for the public ANAF form PDFs served at /pdfs/*.
       PUBLIC_LAWS_BASE_URL: ${PUBLIC_LAWS_BASE_URL:-http://localhost:8000/laws}
       MCP_ALLOWED_HOSTS: ${MCP_ALLOWED_HOSTS:-localhost,localhost:*,127.0.0.1,127.0.0.1:*}
       MCP_ALLOWED_ORIGINS: ${MCP_ALLOWED_ORIGINS:-http://localhost:8000}
@@ -21,8 +22,8 @@ services:
       WEB_WORKERS: ${WEB_WORKERS:-2}
       TZ: Europe/Bucharest
     volumes:
-      # Bind mount so the index (including 0-pdfs/ source PDFs) is visible
-      # both in the container and on the host.
+      # Bind mount so the index (Markdown corpus, BM25 index, PDFs and the OCR
+      # model) is visible both in the container and on the host.
       - ./legislatie-descarcata:/data/legislatie-descarcata
     networks:
       - legislatie
@@ -36,11 +37,10 @@ services:
     command: ["scrapper-legislatie-just-indexer"]
     environment:
       SCRAPPER_DATA_DIR: /data/legislatie-descarcata
-      # PDF corpus now lives inside the data folder (0-pdfs/).
+      LITEPARSE_MODEL_DIR: /data/legislatie-descarcata/models
+      # PDF corpus lives inside the data folder (0-pdfs/).
       SCRAPPER_PDF_SOURCES_DIR: /data/legislatie-descarcata/0-pdfs
       TZ: Europe/Bucharest
-      # OCR of base64 images in downloaded HTML (always available in the image).
-      REINDEX_OCR: ${REINDEX_OCR:-1}
       # Set to 1 for the first launch to build the index immediately.
       REINDEX_ON_START: ${REINDEX_ON_START:-0}
     volumes:

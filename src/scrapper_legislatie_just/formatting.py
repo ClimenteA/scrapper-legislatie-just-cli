@@ -1,7 +1,7 @@
 """Rendering helpers for the HTTP MCP tool layer.
 
-These functions produce the Markdown shapes returned for articles, neighbor
-lists and the act listing, so formatting rules stay in one place.
+Sources are cited by act name, slug and consolidation version. There are no
+HTML anchor links; only ANAF form PDFs keep a public ``/pdfs/...`` link.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from typing import Any
 def format_article(data: dict[str, Any]) -> str:
     lines = [
         f"# {data['doc_title']} — {data['label']}",
-        f"SURSA: {data['link']}",
+        data["source"],
     ]
     if data.get("date"):
         lines.append(f"Versiune: {data['date']}")
@@ -20,35 +20,12 @@ def format_article(data: dict[str, Any]) -> str:
     if data.get("ancestors"):
         lines.extend(["", "**Parinti:**"])
         for item in data["ancestors"]:
-            lines.append(f"- {item['label']} — {item['link']}")
-    return "\n".join(lines)
-
-
-def format_neighbors(data: dict[str, list[dict[str, Any]]]) -> str:
-    lines: list[str] = []
-    for direction, title in (
-        ("outgoing", "Trimiteri din nod"),
-        ("incoming", "Citat de"),
-    ):
-        lines.append(f"## {title}")
-        if not data[direction]:
-            lines.append("(niciuna)")
-        for ref in data[direction]:
-            target = ref["label"] or ref["raw"] or ref["target"]
-            link = ref["link"] or ref["raw"] or ""
-            lines.append(f"- [{ref['rel']}] {target} — {link}")
-        lines.append("")
+            lines.append(f"- {item['label']} — {item.get('source', '')}")
     return "\n".join(lines)
 
 
 def format_docs(rows: list[dict[str, Any]]) -> str:
-    """Catalogue grouped by source family, with the act description.
-
-    The description is what makes source filtering possible before any text
-    search: the agent reads it to decide which acts (and families) a question
-    needs. Older consolidations are counted, not listed; ``all_versions``
-    brings them back.
-    """
+    """Catalogue grouped by source family, with the act description."""
     from .research import FAMILY_LABELS, classify_family
 
     latest = [item for item in rows if item["is_latest"]]
@@ -92,7 +69,8 @@ def format_selection(plan: dict[str, Any]) -> str:
     ]
     if plan["topics"]:
         lines.append(
-            "Teme: " + ", ".join(plan["topics"])
+            "Teme: "
+            + ", ".join(plan["topics"])
             + " · familii obligatorii: "
             + ", ".join(labels.get(f, f) for f in plan["required_families"])
         )
@@ -113,7 +91,7 @@ def format_selection(plan: dict[str, Any]) -> str:
     lines.append("")
     lines.append(
         "Urmatorul pas: research(question) pentru dovezi din fiecare act, "
-        "apoi article/show/neighbors pentru textul integral si exceptii."
+        "apoi article/show pentru textul integral si exceptii."
     )
     return "\n".join(lines)
 

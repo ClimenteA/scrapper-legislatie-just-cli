@@ -1,31 +1,27 @@
 """Hosted MCP tool layer (FastAPI / Streamable HTTP).
 
-Only the read-only, stateless tools are exposed here: the legal index queries,
-the citation graph and BNR currency conversion. Personal-file tools (PDF OCR,
-fiscal context, saved answers) are deliberately not part of this service: it
-keeps no user data on disk.
+Only the read-only, stateless tools are exposed here: the legal index queries
+and BNR currency conversion. Personal-file tools (PDF OCR, fiscal context,
+saved answers) are deliberately not part of this service: it keeps no user data
+on disk.
 
-Each tool opens its own read-only SQLite connection, so it is safe with
-multiple uvicorn workers and with the index being atomically republished by the
-monthly reindex job.
+The corpus is Markdown, so a source is cited by **act name + slug +
+consolidation version**, not by an HTML anchor. ANAF form sheets keep their
+public ``/pdfs/...`` link.
 """
 
 from __future__ import annotations
 
-import json
 from functools import wraps
 from typing import Any, Callable
 
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
-from scrapper_legislatie_just.config import resolve_data_dir, step_dir
 from scrapper_legislatie_just.formatting import (
     format_article,
     format_docs,
-    format_neighbors,
 )
-from scrapper_legislatie_just.graph import run_cypher
 from scrapper_legislatie_just.logger import log
 from scrapper_legislatie_just.misc import strip_diacritics
 from scrapper_legislatie_just.query import LegalIndex, NotFoundError
@@ -36,7 +32,7 @@ SERVER_NAME = "legislatie"
 
 
 def public_base_url() -> str:
-    """Base URL that maps to ``3-expanded`` on the public web server."""
+    """Base URL used for the public ANAF form PDFs."""
     return get_settings().laws_base_url
 
 
@@ -71,25 +67,26 @@ def _anticipated_failure(fn: Callable[..., str]) -> Callable[..., str]:
 mcp = MCPServer(
     SERVER_NAME,
     instructions=(
-        "Index legislativ romanesc. Proces de cercetare: (1) select_docs sau "
-        "research(question) filtreaza catalogul pe familii de surse (coduri, "
-        "norme de aplicare, acte UE, formulare) si aduce dovezi din fiecare; "
-        "un subiect fiscal nu se rezolva dintr-o singura familie. (2) Citeste "
-        "textul cu article/show, nu doar titlul; cauta pana gasesti pasajul "
-        "care trateaza cazul concret, cu sinonime si search(doc=...). "
-        "(3) Urmareste trimiterile cu neighbors pentru exceptii si exceptii "
-        "de la exceptii, inclusiv intre acte. (4) Orice 'nu se aplica/nu se "
-        "include' are nevoie de text explicit de excludere. (5) Formularele "
+        "Index legislativ romanesc in Markdown, cautare BM25 determinista. "
+        "Proces: (1) research(question) sau select_docs(question) filtreaza "
+        "catalogul pe familii de surse (coduri, norme de aplicare, acte UE, "
+        "formulare) si aduce dovezi din fiecare; un subiect fiscal nu se "
+        "rezolva dintr-o singura familie. (2) Citeste textul cu article/show, "
+        "nu doar titlul; cauta pana gasesti pasajul care trateaza cazul "
+        "concret, cu sinonime si search(doc=...). (3) Orice 'nu se aplica/nu "
+        "se include' are nevoie de text explicit de excludere. (4) Formularele "
         "vin doar din actions, cu link PDF; un numar de articol nu este cod "
-        "de formular. (6) Raspunde cu concluzia directa (da/nu/depinde + ce "
-        "faci) in fiecare TL;DR, citeaza linkurile HTTPS exacte returnate, "
-        "descompune intrebarile multiple si finalizeaza cu "
-        "validate_answer(answer, question=<promptul original>). Viteza: apeleaza tool-urile independente "
-        "in acelasi bloc paralel (nu unul dupa altul); `research` e compact "
-        "implicit si e singurul punct de plecare (nu apela si `select_docs` "
-        "separat); nu apela `docs()` intr-un raspuns — foloseste "
-        "`select_docs(question)`; pentru text integral si exceptii foloseste "
-        "`article`/`show`/`neighbors` dupa ce ai ancorele din research."
+        "de formular. (5) Citarea se face cu numele actului, slug-ul si "
+        "versiunea consolidata (ex. 'Codul fiscal (`codul-fiscal`), versiunea "
+        "2026-10-25'); NU exista linkuri HTML cu ancore. Formularele ANAF se "
+        "citeaza cu linkul PDF din actions. (6) Raspunde cu concluzia directa "
+        "(da/nu/depinde + ce faci) in fiecare TL;DR, descompune intrebarile "
+        "multiple si finalizeaza cu validate_answer(answer, question=<promptul "
+        "original>). Viteza: apeleaza tool-urile independente in acelasi bloc "
+        "paralel; `research` e compact implicit si e singurul punct de "
+        "plecare; nu apela `docs()` intr-un raspuns — foloseste "
+        "`select_docs(question)`; pentru text integral foloseste "
+        "`article`/`show` dupa ce ai identificat articolele."
     ),
 )
 
@@ -102,7 +99,7 @@ def search(
     limit: int = 8,
     all_versions: bool = False,
 ) -> str:
-    """Cauta in indexul legislativ (BM25) si intoarce articole cu link HTTPS catre ancora exacta. Foloseste 2-4 variante de cuvinte-cheie."""
+    """Cauta in indexul legislativ (BM25) si intoarce articole cu citarea sursei (act, slug, versiune). Foloseste 2-4 variante de cuvinte-cheie."""
     with _index() as index:
         results = index.search(
             strip_diacritics(query),
@@ -117,7 +114,7 @@ def search(
 @mcp.tool()
 @_anticipated_failure
 def article(doc: str, number: str, version: str | None = None) -> str:
-    """Intoarce un articol intreg (alineate, litere, note) cu link catre ancora lui. Pentru acte fara articole intoarce codul si descrierea din jur."""
+    """Intoarce un articol intreg (alineate, litere, note) din Markdown. Pentru acte fara articole intoarce textul din jurul codului cautat."""
     with _index() as index:
         data = index.article(doc, number, version=version)
         return strip_diacritics(format_article(data))
@@ -126,23 +123,14 @@ def article(doc: str, number: str, version: str | None = None) -> str:
 @mcp.tool()
 @_anticipated_failure
 def show(node_id: str) -> str:
-    """Arata un nod dupa id exact, cu parintii si trimiterile lui."""
+    """Arata un nod dupa id-ul din search (de forma 'slug@YYYY-MM-DD#art-N'), cu textul integral al sectiunii."""
     with _index() as index:
         return strip_diacritics(format_article(index.show(node_id)))
 
 
 @mcp.tool()
-@_anticipated_failure
-def neighbors(node_id: str, subtree: bool = False) -> str:
-    """Trimiterile care pleaca din nod si cele care intra in nod. subtree=True include tot articolul."""
-    with _index() as index:
-        data = index.neighbors(node_id, subtree=subtree)
-        return strip_diacritics(format_neighbors(data))
-
-
-@mcp.tool()
 def context(question: str, limit: int = 4, doc: str | None = None) -> str:
-    """Pachet de evidente pentru o intrebare: articole intregi, linii SURSA: cu link si trimiteri. Cel mai bun punct de plecare."""
+    """Pachet de evidente pentru o intrebare: articole intregi cu linii SURSA: (act, slug, versiune). Cel mai bun punct de plecare."""
     with _index() as index:
         return index.context(
             strip_diacritics(question),
@@ -185,7 +173,7 @@ def research(
     max_docs: int = 10,
     compact: bool = True,
 ) -> str:
-    """Cercetare completa intr-un singur apel: selecteaza actele pe familii, cauta textul in fiecare si raporteaza familiile fara dovezi. Implicit compact: pasaje scurte cu ancora exacta, fara text integral; completeaza cu article/show/neighbors doar unde e nevoie."""
+    """Cercetare completa intr-un singur apel: selecteaza actele pe familii, cauta textul in fiecare si raporteaza familiile fara dovezi. Implicit compact: pasaje scurte cu citarea sursei; completeaza cu article/show doar unde e nevoie."""
     with _index() as index:
         return strip_diacritics(
             index.research(
@@ -195,18 +183,6 @@ def research(
                 compact=compact,
             )
         )
-
-
-@mcp.tool()
-def cypher(query: str) -> str:
-    """Interogare Cypher peste graful de citari (graph.db). Nu cauta in textul legii; pentru text foloseste search sau context."""
-    root = resolve_data_dir()
-    rows = run_cypher(
-        step_dir(root, "processed") / "graph.db",
-        query,
-        base_url=public_base_url(),
-    )
-    return json.dumps(rows, ensure_ascii=False, indent=2)
 
 
 @mcp.tool()
@@ -224,13 +200,15 @@ def actions(query: str | None = None, limit: int = 10) -> str:
     from scrapper_legislatie_just.formatting import format_actions
 
     with _index() as index:
-        rows = index.actions(strip_diacritics(query or ""), limit=max(1, min(limit, 50)))
+        rows = index.actions(
+            strip_diacritics(query or ""), limit=max(1, min(limit, 50))
+        )
         return strip_diacritics(format_actions(rows))
 
 
 @mcp.tool()
 def answer_template() -> str:
-    """Intoarce formatul de raspuns OBLIGATORIU. Apela-l inainte de a compune raspunsul, mai ales cnd promptul are mai multe intrebari."""
+    """Intoarce formatul de raspuns OBLIGATORIU. Apela-l inainte de a compune raspunsul, mai ales cand promptul are mai multe intrebari."""
     from scrapper_legislatie_just.answers import answer_template as load_template
 
     return strip_diacritics(load_template())
@@ -238,7 +216,7 @@ def answer_template() -> str:
 
 @mcp.tool()
 def validate_answer(answer: str, question: str | None = None) -> str:
-    """Auto-audit inainte de trimitere: sectiuni obligatorii, linkuri cu ancora, distinctia articol/formular si versiunea. Trimite si `question` (promptul original) ca sa verifice ca fiecare intrebare numerotata are blocul ei de raspuns. Nu verifica daca dreptul citat sustine concluzia."""
+    """Auto-audit inainte de trimitere: sectiuni obligatorii, citarea sursei (act, slug, versiune), distinctia articol/formular si versiunea. Trimite si `question` (promptul original) ca sa verifice ca fiecare intrebare numerotata are blocul ei de raspuns. Nu verifica daca dreptul citat sustine concluzia."""
     from scrapper_legislatie_just.answers import audit_answer
 
     warnings = audit_answer(answer, question=question)

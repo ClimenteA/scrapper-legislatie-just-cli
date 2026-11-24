@@ -18,15 +18,19 @@ RUN curl -fLsS \
 
 WORKDIR /app
 # Build context is the repository root (see docker-compose.yml), which holds
-# the single package, its scripts and the frozen lockfile. OCR (docling,
-# easyocr) is a required dependency, so there is one image for both the web
-# app and the indexer. torch/torchvision come from the CPU-only PyTorch index
-# configured in pyproject.toml, so no nvidia-*/CUDA wheels are downloaded.
+# the single package, its scripts and the frozen lockfile. One image serves
+# both the web app and the indexer: PDF -> Markdown uses LiteParse with the
+# ocria-nano OCR model, HTML -> Markdown uses markdownify, and the index is a
+# deterministic BM25 (llama-index) build. No torch, no Docling, no embeddings.
 COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
 
 RUN pip install uv && uv sync --frozen --no-dev
 ENV PATH="/app/.venv/bin:$PATH"
+
+# The OCR model is downloaded once into the bind-mounted data directory, so a
+# recreated container reuses it instead of downloading ~60 MB again.
+ENV LITEPARSE_MODEL_DIR=/data/legislatie-descarcata/models
 
 EXPOSE 8000
 CMD ["scrapper-legislatie-just-web"]

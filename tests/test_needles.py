@@ -1,11 +1,19 @@
-import json
+"""Needle-in-the-haystack checks on a tiny synthetic Markdown corpus.
+
+The corpus is Markdown (no HTML anchors): a hit is identified by the act slug,
+the consolidation version and the article number, and the ``SURSA:`` line
+carries that identity.
+"""
+
+from __future__ import annotations
+
 import shutil
 from pathlib import Path
 
 import pytest
 
-from scrapper_legislatie_just.processor import LegalIndexBuilder
-from scrapper_legislatie_just.query import LegalIndex
+from scrapper_legislatie_just.bm25_index import Bm25IndexBuilder
+from scrapper_legislatie_just.query import LegalIndex, NotFoundError
 
 FIXTURES = Path(__file__).parent / "fixtures" / "needle"
 
@@ -13,7 +21,7 @@ FIXTURES = Path(__file__).parent / "fixtures" / "needle"
 @pytest.fixture()
 def needle_index(tmp_path):
     shutil.copytree(FIXTURES / "3-expanded", tmp_path / "3-expanded")
-    builder = LegalIndexBuilder(surse=[], data_dir=tmp_path)
+    builder = Bm25IndexBuilder(surse=[], data_dir=tmp_path)
     result = builder.build()
     index = LegalIndex(data_dir=tmp_path)
     try:
@@ -22,14 +30,17 @@ def needle_index(tmp_path):
         index.close()
 
 
-def test_needle_finds_exact_anchor(needle_index):
+def test_needle_finds_the_article_text(needle_index):
     _, index, _ = needle_index
     hits = index.search("handicap accentuat opta impozitare", limit=5)
     assert hits, "the synthetic needle should be found"
-    anchor = hits[0]["link"].rsplit("#", 1)[-1]
-    assert anchor == "v-3"
     assert hits[0]["article_number"] == "2"
-    assert hits[0]["article_link"].endswith("#s_art_2")
+    assert "handicap accentuat" in hits[0]["text"]
+    # Citation is act identity, not an HTML anchor.
+    assert hits[0]["doc"] == "act-a"
+    assert hits[0]["version"] == "2024-01-01"
+    assert "`act-a`" in hits[0]["source"]
+    assert "#" not in hits[0]["source"]
 
 
 def test_needle_finds_article_across_synonyms(needle_index):
@@ -37,142 +48,62 @@ def test_needle_finds_article_across_synonyms(needle_index):
     hits = index.search("scutire programatori", limit=5)
     assert hits
     assert hits[0]["article_number"] == "1"
-    # The link must point at a real anchor inside the source HTML.
-    assert "#" in hits[0]["link"]
-    assert hits[0]["link"].startswith("file://")
 
 
-def test_article_renders_children_in_order_and_note_last(needle_index):
+def test_article_renders_the_full_section(needle_index):
     _, index, _ = needle_index
     data = index.article("act-a", "1")
     text = data["text"]
-    assert text.startswith("**Articolul 1**")
+    assert text.startswith("### Articolul 1")
     assert "Scutiri pentru programatori" in text
     assert "Persoanele fizice cu handicap grav" in text
-    assert text.rstrip().splitlines()[-1].startswith("> **Nota:**")
-    # The note must not leak into the article's own text at the top.
-    assert not text.splitlines()[1].startswith("Nota")
+    assert "prevederea se aplica incepand cu 2027" in text
+    assert data["doc"] == "act-a"
+    assert data["version"] == "2024-01-01"
 
 
-def test_synthetic_nodes_inherit_parent_anchor(needle_index):
-    builder, _, _ = needle_index
-    import sqlite3
-
-    connection = sqlite3.connect(builder.db_path)
-    connection.row_factory = sqlite3.Row
-    try:
-        row = connection.execute(
-            "SELECT anchor FROM nodes WHERE kind = 'paragraf' AND text = ?",
-            ("Scutiri fara ancora proprie",),
-        ).fetchone()
-    finally:
-        connection.close()
-    assert row is not None
-    assert row["anchor"] == "s_art_1"
-
-
-def test_cross_document_reference_resolves_to_article(needle_index):
-    builder, _, _ = needle_index
-    from scrapper_legislatie_just.graph import run_cypher
-
-    rows = run_cypher(
-        builder.graph_path,
-        "MATCH (a)-[r:MENTIONEAZA]->(b) WHERE a.doc = 'act-b' "
-        "RETURN a.id AS src, b.id AS dst, r.rel AS rel",
-    )
-    assert rows, "act-b mentions act-a, so a cross-document edge is expected"
-    assert any(row["dst"] == "act-a@2024-01-01#s_art_1" for row in rows)
-
-
-def test_intra_document_citation_edge(needle_index):
-    builder, _, _ = needle_index
-    from scrapper_legislatie_just.graph import run_cypher
-
-    rows = run_cypher(
-        builder.graph_path,
-        "MATCH (a)-[r:CITEAZA]->(b) "
-        "WHERE a.id = 'act-a@2024-01-01#s_aln_2' "
-        "RETURN a.id AS src, b.id AS dst, r.rel AS rel",
-    )
-    assert any(
-        row["src"] == "act-a@2024-01-01#s_aln_2"
-        and row["dst"] == "act-a@2024-01-01#s_art_2"
-        for row in rows
-    )
-
-
-def test_citation_graph_is_not_duplicated_in_law_db(needle_index):
-    builder, _, _ = needle_index
-    import sqlite3
-
-    connection = sqlite3.connect(builder.db_path)
-    try:
-        tables = {
-            row[0]
-            for row in connection.execute(
-                "SELECT name FROM sqlite_master WHERE type = 'table'"
-            )
-        }
-    finally:
-        connection.close()
-    assert "refs" not in tables
-    assert builder.graph_path.exists()
-
-
-def test_neighbors_reads_the_graph_store(needle_index):
+def test_missing_article_suggests_neighbours(needle_index):
     _, index, _ = needle_index
-    data = index.neighbors("act-a@2024-01-01#s_aln_2")
-    assert data["outgoing"]
-    assert any(
-        ref["target"] == "act-a@2024-01-01#s_art_2" for ref in data["outgoing"]
-    )
+    with pytest.raises(NotFoundError, match="Articole disponibile"):
+        index.article("act-a", "999")
 
 
 def test_manifest_skips_second_build_and_rebuilds_after_change(needle_index):
     builder, _, _ = needle_index
-    second = builder.build()
-    assert second["skipped"] is True
+    assert builder.build()["skipped"] is True
 
-    html = builder.expanded_dir / "act-a" / "100-act-a-2024-01-01.html"
-    html.write_text(
-        html.read_text(encoding="utf-8").replace(
+    md = builder.expanded_dir / "act-a" / "100-act-a-2024-01-01.md"
+    md.write_text(
+        md.read_text(encoding="utf-8").replace(
             "Scutiri pentru programatori", "Scutiri pentru programatori si alte persoane"
         ),
         encoding="utf-8",
     )
-    third = builder.build()
-    assert third["skipped"] is False
+    assert builder.build()["skipped"] is False
 
 
 def test_context_contains_source_lines(needle_index):
     _, index, _ = needle_index
     text = index.context("exceptie de la exceptie handicap", limit=4)
-    assert "SURSA: file://" in text
+    assert "SURSA:" in text
+    assert "`act-a`" in text
+    assert "versiunea 2024-01-01" in text
     assert "handicap" in text.lower()
+    assert "file://" not in text
 
 
-def test_graph_export_roundtrip(needle_index):
-    graphqlite = pytest.importorskip("graphqlite")
-    builder, _, _ = needle_index
-    from scrapper_legislatie_just.graph import run_cypher
+def test_show_returns_the_node_from_search(needle_index):
+    _, index, _ = needle_index
+    hit = index.search("handicap accentuat", limit=1)[0]
+    data = index.show(hit["id"])
+    assert data["doc"] == "act-a"
+    assert "handicap accentuat" in data["text"]
 
-    graph_path = builder.graph_path
-    assert graph_path.exists()
 
-    rows = run_cypher(
-        graph_path,
-        "MATCH (a)-[:CITEAZA]->(b:Articol) RETURN a.label, b.label",
-    )
-    assert rows
-    assert any(row["b.label"] == "Articolul 2" for row in rows)
-
-    article_edges = run_cypher(
-        graph_path,
-        "MATCH (a:Articol)-[r:CITEAZA_ARTICOL]->(b:Articol) "
-        "RETURN a.label, b.label, r.count ORDER BY r.count DESC",
-    )
-    assert article_edges
-    assert any(
-        row["a.label"] == "Articolul 1" and row["b.label"] == "Articolul 2"
-        for row in article_edges
-    )
+def test_docs_lists_the_latest_version(needle_index):
+    _, index, _ = needle_index
+    rows = index.docs()
+    slugs = {row["slug"] for row in rows}
+    assert slugs == {"act-a", "act-b"}
+    assert all(row["is_latest"] for row in rows)
+    assert all(row["source_url"].startswith("https://legislatie.just.ro/") for row in rows)

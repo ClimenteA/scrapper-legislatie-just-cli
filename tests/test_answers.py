@@ -9,8 +9,12 @@ from scrapper_legislatie_just.answers import (
     slugify,
 )
 
+CITATION = (
+    "- Conform Codului fiscal (`codul-fiscal`), versiunea 2026-10-25, "
+    "art. 269 alin. (1) — text."
+)
 
-GOOD_ANSWER = """## INTREBARE
+GOOD_ANSWER = f"""## INTREBARE
 
 Test?
 
@@ -20,11 +24,11 @@ Da.
 
 ## TEMEI LEGAL
 
-- Conform [Codul fiscal, art. 269 alin. (1)](http://localhost:8000/laws/x.html#s_art_256) — text.
+{CITATION}
 
 ## Sursa
 
-_Versiune consolidata: 2026-10-25._
+Surse: Codul fiscal (`codul-fiscal`), versiunea 2026-10-25.
 """
 
 
@@ -35,7 +39,7 @@ def test_audit_answer_accepts_clean_answer():
 def test_audit_answer_flags_missing_sections_and_bad_citations():
     bad = """## TL;DR
 
-Da, conform [art. 269](http://localhost:8000/laws/x.html#s_art_256).
+Da, conform Codului fiscal, art. 269 — text.
 
 ## TEMEI LEGAL
 
@@ -48,23 +52,21 @@ _Versiune consolidata._
 """
     warnings = audit_answer(bad)
     assert any("INTREBARE" in warning for warning in warnings)
-    assert any("TL;DR" in warning for warning in warnings)
-    assert any("ancora exacta" in warning for warning in warnings)
+    assert any("sursa citata" in warning for warning in warnings)
     assert any("numar de articol nu este cod de formular" in warning for warning in warnings)
     assert any("YYYY-MM-DD" in warning for warning in warnings)
 
 
 def test_audit_answer_accepts_form_when_actions_link_present():
     answer = GOOD_ANSWER.replace(
-        "- Conform [Codul fiscal, art. 269 alin. (1)]"
-        "(http://localhost:8000/laws/x.html#s_art_256) — text.",
+        CITATION,
         "- Depune [D300](http://localhost:8000/pdfs/declaratie-300/D300.pdf#page=1) "
         "conform art. 323.",
     )
     assert audit_answer(answer) == []
 
 
-MULTI_QUESTION_ANSWER = """## INTREBARE
+MULTI_QUESTION_ANSWER = f"""## INTREBARE
 
 Intrebare?
 
@@ -76,7 +78,7 @@ Da.
 
 **TEMEI LEGAL**
 
-- Conform [Codul fiscal, art. 269](http://localhost:8000/laws/x.html#s_art_256) — text.
+- Conform Codului fiscal (`codul-fiscal`), versiunea 2026-10-25, art. 269 — text.
 
 **ACTIUNI**
 
@@ -90,7 +92,7 @@ Nu.
 
 **TEMEI LEGAL**
 
-- Conform [Codul fiscal, art. 310](http://localhost:8000/laws/x.html#s_art_302) — text.
+- Conform Codului fiscal (`codul-fiscal`), versiunea 2026-10-25, art. 310 — text.
 
 **ACTIUNI**
 
@@ -116,7 +118,7 @@ def test_audit_answer_flags_vies_answer_without_norme_or_eu_source():
         "Test?", "Clientul nu are cod VIES valid; il pot trata ca neimpozabil?"
     )
     warnings = audit_answer(answer)
-    assert any("normele de aplicare" in warning for warning in warnings)
+    assert any("normelor de aplicare" in warning for warning in warnings)
     assert any("act al Uniunii" in warning for warning in warnings)
 
 
@@ -148,14 +150,12 @@ def test_audit_answer_accepts_complete_cancellation_answer():
     answer = GOOD_ANSWER.replace(
         "Test?", "Codul de TVA mi-a fost anulat din cauza inactivitatii."
     ).replace(
-        "- Conform [Codul fiscal, art. 269 alin. (1)]"
-        "(http://localhost:8000/laws/x.html#s_art_256) — text.",
-        "- Conform [Codul fiscal, art. 269 alin. (1)]"
-        "(http://localhost:8000/laws/x.html#s_art_256) — text.\n"
-        "- Conform [Norme, pct. 1](http://localhost:8000/laws/3-expanded/"
-        "norme-metodologice/x.html#s_aln_1) — text.\n"
-        "- Conform [Reg. UE](http://localhost:8000/laws/3-expanded/"
-        "ue-regulament/x.html#p1) — text.",
+        CITATION,
+        CITATION
+        + "\n- Conform Normelor metodologice (`norme-metodologice`), "
+        "versiunea 2026-10-25, pct. 1 — text."
+        + "\n- Conform Regulamentului de punere in aplicare (`ue-regulament-282-2011`), "
+        "versiunea 2026-10-25, art. 1 — text.",
     ).replace(
         "## Sursa",
         "## ACTIUNI\n\n- Depune [D311](http://localhost:8000/pdfs/"
@@ -200,9 +200,7 @@ def test_audit_accepts_bare_pdf_link_and_form_mentioned_elsewhere():
 
 
 def test_audit_still_flags_form_without_any_pdf_link():
-    answer = GOOD_ANSWER.replace(
-        "Da.", "Da, se depune formularul 311."
-    )
+    answer = GOOD_ANSWER.replace("Da.", "Da, se depune formularul 311.")
     assert any(
         "numar de articol nu este cod de formular" in warning
         for warning in audit_answer(answer)
@@ -290,4 +288,3 @@ def test_save_answer_can_refuse_overwrite(tmp_path: Path):
     assert (tmp_path / "aceeasi-intrebare.md").read_text(encoding="utf-8") == (
         "## INTREBARE\n\nAceeasi intrebare\n\nunu\n"
     )
-

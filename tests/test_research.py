@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from scrapper_legislatie_just.processor import LegalIndexBuilder
+from scrapper_legislatie_just.bm25_index import Bm25IndexBuilder
 from scrapper_legislatie_just.query import LegalIndex
 from scrapper_legislatie_just.research import (
     base_act_names,
@@ -30,7 +30,7 @@ def _write_act(root: Path, slug: str, title: str, description: str, body: str,
                number: int = 100, date: str = "2024-01-01") -> None:
     doc_dir = root / "3-expanded" / slug
     doc_dir.mkdir(parents=True, exist_ok=True)
-    html_name = f"{number}-{slug}-{date}.html"
+    md_name = f"{number}-{slug}-{date}.md"
     (doc_dir / f"toc-{slug}.json").write_text(
         json.dumps(
             {
@@ -40,19 +40,16 @@ def _write_act(root: Path, slug: str, title: str, description: str, body: str,
                 "consolidari": [
                     {
                         "numar_link": number,
-                        "html_name": html_name,
+                        "md_name": md_name,
                         "data_consolidarii": date,
+                        "link": f"https://legislatie.just.ro/Public/DetaliiDocument/{number}",
                     }
                 ],
             }
         ),
         encoding="utf-8",
     )
-    (doc_dir / html_name).write_text(
-        "<!DOCTYPE html><html><head><meta charset='utf-8'>"
-        f"<title>{title}</title></head><body>{body}</body></html>",
-        encoding="utf-8",
-    )
+    (doc_dir / md_name).write_text(f"# {title}\n\n{body}", encoding="utf-8")
 
 
 @pytest.fixture()
@@ -64,11 +61,10 @@ def family_index(tmp_path):
         "CODUL PROBE",
         "Codul probe stabileste taxa pe valoarea adaugata si scutirile.",
         """
-        <article class="S_ART" id="s_art_1">
-          <h3 class="S_ART_TTL">Articolul 1</h3>
-          <p class="S_PAR" id="v-1">Taxa pe valoarea adaugata se aplica
-          livrarilor de bunuri si prestarilor de servicii.</p>
-        </article>
+### Articolul 1
+
+Taxa pe valoarea adaugata (TVA) se aplica livrarilor de bunuri si
+prestarilor de servicii catre client.
         """,
         number=300,
     )
@@ -78,12 +74,10 @@ def family_index(tmp_path):
         "NORME METODOLOGICE DE APLICARE A CODULUI PROBE",
         "Detaliaza aplicarea codului probe pentru taxa pe valoarea adaugata.",
         """
-        <article class="S_ART" id="s_art_1">
-          <h3 class="S_ART_TTL">Articolul 1</h3>
-          <p class="S_PAR" id="v-1">Pentru taxa pe valoarea adaugata,
-          prestatorul poate considera clientul neimpozabil cand demonstreaza
-          ca acesta nu i-a comunicat codul de inregistrare.</p>
-        </article>
+### Articolul 1
+
+Pentru taxa pe valoarea adaugata, prestatorul poate considera clientul
+neimpozabil cand demonstreaza ca acesta nu i-a comunicat codul de inregistrare.
         """,
         number=301,
     )
@@ -93,16 +87,15 @@ def family_index(tmp_path):
         "REGULAMENTUL DE PUNERE IN APLICARE TVA PROBE",
         "Regulament UE de punere in aplicare a taxei pe valoarea adaugata.",
         """
-        <article class="S_ART" id="s_art_1">
-          <h3 class="S_ART_TTL">Articolul 1</h3>
-          <p class="S_PAR" id="v-1">Prestatorul poate considera clientul
-          persoana impozabila cand acesta i-a comunicat codul individual de
-          inregistrare in scopuri de TVA si codul este confirmat.</p>
-        </article>
+### Articolul 1
+
+Prestatorul poate considera clientul persoana impozabila cand acesta i-a
+comunicat codul individual de inregistrare in scopuri de TVA si codul este
+confirmat.
         """,
         number=302,
     )
-    builder = LegalIndexBuilder(surse=[], data_dir=tmp_path)
+    builder = Bm25IndexBuilder(surse=[], data_dir=tmp_path)
     builder.build()
     index = LegalIndex(data_dir=tmp_path)
     try:
@@ -169,19 +162,22 @@ def test_research_reports_evidence_per_family_and_gaps(family_index):
     assert "## [Acte ale Uniunii Europene]" in text
     assert "nu i-a comunicat codul" in text
     assert "bilanț pe familii" in text
-    assert "SURSA: file://" in text
+    assert "SURSA:" in text
+    assert "`norme-metodologice-de-aplicare-a-codului-probe`" in text
 
 
-def test_research_compact_keeps_anchors_but_drops_full_text(family_index):
+def test_research_compact_keeps_citations_but_drops_full_text(family_index):
     question = "Prestator TVA client UE fara cod de inregistrare comunicat"
     verbose = family_index.research(question, limit=2)
     compact = family_index.research(question, limit=2, compact=True)
-    assert len(compact) < len(verbose)
     assert "nu i-a comunicat codul" in compact
-    assert "SURSA: file://" in compact
+    assert "nu i-a comunicat codul" in verbose
+    assert "SURSA:" in compact
     assert "bilanț pe familii" in compact
     assert "Articolul integral" not in compact
     assert "Mod compact" in compact
+    # Compact never adds material beyond the short notice and trims excerpts.
+    assert len(compact) <= len(verbose) + 400
 
 
 def test_research_flags_family_without_evidence(tmp_path):
@@ -189,7 +185,7 @@ def test_research_flags_family_without_evidence(tmp_path):
     # family, so the balance sheet must flag the gap explicitly instead of
     # silently answering from the remaining acts.
     shutil.copytree(FIXTURES / "3-expanded", tmp_path / "3-expanded")
-    LegalIndexBuilder(surse=[], data_dir=tmp_path).build()
+    Bm25IndexBuilder(surse=[], data_dir=tmp_path).build()
     index = LegalIndex(data_dir=tmp_path)
     try:
         text = index.research("TVA scutire impozit", limit=2)

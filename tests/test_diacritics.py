@@ -1,9 +1,12 @@
+"""Diacritics folding and the cleaner's ASCII-only output."""
+
+from __future__ import annotations
+
 from bs4 import BeautifulSoup
 
 from scrapper_legislatie_just.cleaner import LegislatieJustCleaner
 from scrapper_legislatie_just.config import STEP_DIRS
 from scrapper_legislatie_just.misc import strip_diacritics
-from scrapper_legislatie_just.processor import clean_text, preformatted_text
 from scrapper_legislatie_just.sources import surse_legislatie_just
 
 SLUG = "legea-contabilitatii"
@@ -26,14 +29,10 @@ def test_strip_diacritics_keeps_table_layout_and_punctuation():
     assert strip_diacritics("ĂÂÎȘȚ șțăîâ") == "AAIST staia"
 
 
-def test_processor_clean_text_strips_diacritics():
-    assert clean_text("Art. 1 – Dispoziții\u00a0generale") == "Art. 1 – Dispozitii generale"
+def test_query_folding_matches_the_cleaner():
+    from scrapper_legislatie_just.text import query_text
 
-
-def test_processor_preformatted_text_strips_diacritics():
-    soup = BeautifulSoup("<pre>│ Țară │\n│ ă â │</pre>", "html.parser")
-
-    assert preformatted_text(soup.pre) == "│ Tara │\n│ a a │"
+    assert query_text("Dispozițiile se aplică") == "dispozitiile aplica"
 
 
 def test_cleaner_writes_ascii_only_html(tmp_path):
@@ -52,9 +51,7 @@ def test_cleaner_writes_ascii_only_html(tmp_path):
     )
     source = next(s for s in surse_legislatie_just if s.slug == SLUG)
 
-    clean_result = LegislatieJustCleaner(
-        surse=[source], data_dir=tmp_path, use_ocr=False
-    ).cleanify()
+    clean_result = LegislatieJustCleaner(surse=[source], data_dir=tmp_path).cleanify()
 
     assert clean_result == {"cleaned": 1, "skipped": 0}
     cleaned = (tmp_path / STEP_DIRS["clean"] / raw.name).read_text(encoding="utf-8")
@@ -62,4 +59,3 @@ def test_cleaner_writes_ascii_only_html(tmp_path):
     assert body_text.isascii()
     assert "Prezentul act se aplica si in cazul profesionistilor." in cleaned
     assert "Dispozitii generale" in cleaned
-

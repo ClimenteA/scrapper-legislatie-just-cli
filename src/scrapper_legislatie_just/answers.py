@@ -53,7 +53,12 @@ REQUIRED_SECTIONS = (
 )
 _HEADING_RE = re.compile(r"^#{1,6}\s+(.+?)\s*$", re.MULTILINE)
 _BOLD_LABEL_RE = re.compile(r"^\*\*(.+?)\*\*\s*$", re.MULTILINE)
-_ANCHOR_LINK_RE = re.compile(r"\]\([^)\s]+#[^)\s]+\)")
+# A source citation is the act slug in backticks (``codul-fiscal``), the
+# explicit SURSA label, or the act name plus a version. HTML anchors no longer
+# exist: the corpus is Markdown.
+_SOURCE_REF_RE = re.compile(
+    r"`[a-z0-9][a-z0-9-]+`|\bSURSA\b|/pdfs/[^\s)\]]+", re.IGNORECASE
+)
 _DATE_RE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
 _FORM_AS_ARTICLE_RE = re.compile(
     r"\b(decontul|decont|formularul|formular)\s+(\d{2,4})\b", re.IGNORECASE
@@ -78,10 +83,8 @@ _PROMPT_NUMBERED_RE = re.compile(
 # or the legacy zero-padded codes (010, 088, 093...). No specific form is
 # hard-coded here; which form applies is decided by the sources, not by us.
 _FORM_CODE_RE = re.compile(r"\b(?:D\s?\d{3,4}|0\d{2,3})\b", re.IGNORECASE)
-_NORME_LINK_RE = re.compile(r"/3-expanded/norme[^)\s]*#[^)\s]+", re.I)
-_UE_LINK_RE = re.compile(
-    r"/3-expanded/ue-[^)\s]+#[^)\s]+|/pdfs/ue-[^)\s]+", re.I
-)
+_NORME_REF_RE = re.compile(r"`?norme[a-z0-9-]*`?", re.I)
+_UE_REF_RE = re.compile(r"`?ue-[a-z0-9-]+`?|/pdfs/ue-[^)\s]+", re.I)
 _INACTIVITY_RE = re.compile(r"\binactiv\w*", re.I)
 _CANCEL_RE = re.compile(
     r"\banula\w*\b[^.\n]{0,80}\btva\b|\btva\b[^.\n]{0,80}\banula\w*\b", re.I
@@ -199,15 +202,15 @@ def audit_answer(answer: str, question: str | None = None) -> list[str]:
     if legal:
         bullets = [line for line in legal.splitlines() if line.lstrip().startswith("- ")]
         if not bullets:
-            warnings.append("TEMEI LEGAL nu contine puncte cu linkuri.")
+            warnings.append("TEMEI LEGAL nu contine puncte cu sursa citata.")
         for bullet in bullets:
-            if not _ANCHOR_LINK_RE.search(bullet):
+            if not _SOURCE_REF_RE.search(bullet):
                 warnings.append(
-                    "Punct din TEMEI LEGAL fara link catre o ancora exacta: "
-                    + bullet.strip()[:80]
+                    "Punct din TEMEI LEGAL fara sursa citata (slug in backticks "
+                    "sau eticheta SURSA): " + bullet.strip()[:80]
                 )
     else:
-        warnings.append("Nu pot verifica linkurile: lipseste sectiunea '## TEMEI LEGAL'.")
+        warnings.append("Nu pot verifica sursele: lipseste sectiunea '## TEMEI LEGAL'.")
 
     source = bodies.get("SURSA", "")
     if source and not _DATE_RE.search(source):
@@ -282,15 +285,15 @@ def audit_answer(answer: str, question: str | None = None) -> list[str]:
 
     topics, _required = topic_families(text)
     if "tva" in topics:
-        if not _NORME_LINK_RE.search(answer):
+        if not _NORME_REF_RE.search(answer):
             warnings.append(
-                "Subiect de TVA fara link catre normele de aplicare: regula "
+                "Subiect de TVA fara citarea normelor de aplicare: regula "
                 "din cod se aplica impreuna cu normele (Gate A). Daca ai "
                 "cautat si nu exista text, spune explicit."
             )
-        if not _UE_LINK_RE.search(answer):
+        if not _UE_REF_RE.search(answer):
             warnings.append(
-                "Subiect de TVA fara link catre un act al Uniunii: TVA este "
+                "Subiect de TVA fara citarea unui act al Uniunii: TVA este "
                 "armonizata, regulamentul/directiva UE se aplica direct "
                 "(Gate A). Daca ai cautat si nu exista text, spune explicit."
             )

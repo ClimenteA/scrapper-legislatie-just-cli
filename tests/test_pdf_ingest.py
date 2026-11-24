@@ -1,39 +1,20 @@
-"""Tests for the unified Docling PDF ingestion and source-only guardrails."""
+"""Tests for the PDF corpus discovery, the public ``5-pdfs`` copies and actions."""
 
 from __future__ import annotations
 
 import json
-import sqlite3
+import shutil
 from pathlib import Path
+
+import pytest
 
 from scrapper_legislatie_just import pdf_ingest
 from scrapper_legislatie_just.answers import template_warnings
+from scrapper_legislatie_just.bm25_index import Bm25IndexBuilder
 from scrapper_legislatie_just.config import step_dir
-from scrapper_legislatie_just.links import make_link
 from scrapper_legislatie_just.query import LegalIndex
 
-
-class _Prov:
-    def __init__(self, page: int):
-        self.page_no = page
-
-
-class _Item:
-    def __init__(self, text: str, label: str = "text", page: int = 1):
-        self.text = text
-        self.label = label
-        self.prov = [_Prov(page)]
-
-
-class _Doc:
-    def iterate_items(self):
-        return iter(
-            [
-                (_Item("REGULAMENTUL de punere in aplicare", "title", 1), 0),
-                (_Item("Articolul 3", "title", 2), 1),
-                (_Item("Fara a aduce atingere articolului 59a", "text", 2), 0),
-            ]
-        )
+FIXTURES = Path(__file__).parent / "fixtures" / "needle"
 
 
 def _sources(tmp_path: Path) -> Path:
@@ -73,153 +54,84 @@ def test_manifest_prefers_simple_pdf_for_xfa(tmp_path: Path):
 
 def test_sources_default_to_0_pdfs_inside_data_root(tmp_path: Path, monkeypatch):
     monkeypatch.delenv("SCRAPPER_PDF_SOURCES_DIR", raising=False)
-    monkeypatch.setattr(pdf_ingest, "_docling_document", lambda path, ocr=False: _Doc())
     data = tmp_path / "data"
     sources = data / "0-pdfs"
     sources.mkdir(parents=True)
     _sources(sources)
 
     assert pdf_ingest.resolve_pdf_sources_dir(data_root=data) == sources.resolve()
-    docs, _, actions = pdf_ingest.ingest_pdf_sources(data)
-    assert len(docs) == 2
-    assert len(actions) == 1
+    descriptors = pdf_ingest.pdf_descriptors(data)
+    # One declaration (XFA flattened) + one EU act.
+    assert len(descriptors) == 2
+    assert {item["kind"] for item in descriptors} == {"declaratie", "act-ue"}
+    # Every descriptor has a stable Markdown file name and a synthetic number.
+    assert all(item["md_name"].endswith(".md") for item in descriptors)
+    assert all(item["numar_link"] >= 9_000_000 for item in descriptors)
 
 
-def test_ingest_writes_graph_doc_and_actions(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr(pdf_ingest, "_docling_document", lambda path, ocr=False: _Doc())
+def test_sync_publishes_pdf_under_5_pdfs(tmp_path: Path):
     data = tmp_path / "data"
     data.mkdir()
     sources = _sources(tmp_path)
-    docs, nodes, actions = pdf_ingest.ingest_pdf_sources(data, sources_dir=sources)
-    assert len(docs) == 2  # one declaration + one EU act
-    assert len(actions) == 1
-    assert actions[0]["code"] == "300"
-    assert any(node.kind == "articol" for node in nodes if node.doc_slug.endswith("282-2011"))
-
-    graph_doc = step_dir(data, "expanded") / "declaratie-300" / "graph.json"
-    assert graph_doc.exists()
-    served = data / "5-pdfs" / "declaratie-300" / "D300.pdf"
+    descriptor = next(
+        item
+        for item in pdf_ingest.pdf_descriptors(data, sources_dir=sources)
+        if item["kind"] == "declaratie"
+    )
+    served = pdf_ingest.sync_pdf_into_data_dir(
+        descriptor["source_path"], data, descriptor["slug"]
+    )
+    assert served == data / "5-pdfs" / "declaratie-300" / "D300.pdf"
     assert served.read_bytes() == b"%PDF-flat"  # flattened XFA
 
-    # Second pass loads the cached graph doc; no reconversion.
-    def fail(*args, **kwargs):
-        raise AssertionError("PDF was converted twice")
 
-    monkeypatch.setattr(pdf_ingest, "_docling_document", fail)
-    again, _, _ = pdf_ingest.ingest_pdf_sources(data, sources_dir=sources)
-    assert len(again) == 2
+def test_load_pdf_actions_uses_served_pdf_path(tmp_path: Path):
+    data = tmp_path / "data"
+    data.mkdir()
+    sources = _sources(tmp_path)
+    actions = pdf_ingest.load_pdf_actions(data, sources_dir=sources)
 
-
-def test_pdf_links_use_page_fragment(tmp_path: Path):
-    rel = "5-pdfs/declaratie-300/D300.pdf"
-    local = make_link(tmp_path, rel, "p3_g12")
-    assert local.endswith("#page=3")
-    hosted = make_link(tmp_path, rel, "p3_g12", "https://mcp.chatcodfiscal.ro/laws")
-    assert hosted == "https://mcp.chatcodfiscal.ro/pdfs/declaratie-300/D300.pdf#page=3"
+    assert len(actions) == 1
+    assert actions[0]["code"] == "300"
+    assert actions[0]["pdf_rel"] == "5-pdfs/declaratie-300/D300.pdf"
+    assert actions[0]["source_url"] == "https://static.anaf.ro/D300.pdf"
 
 
-def test_export_docling_graph(tmp_path: Path):
-    from scrapper_legislatie_just.processor import RawNode
-
-    node = RawNode(
-        id="x@1#root",
-        anchor=None,
-        kind="document",
-        label="Act",
-        text="",
-        parent=None,
-        path="Act",
-        depth=0,
-        order_idx=0,
-        number=None,
-        article_id=None,
-        doc_slug="act",
-        doc_version="1",
-    )
-    files = pdf_ingest.export_docling_graph(
-        tmp_path, [node], [{"slug": "act", "version": "1"}]
-    )
-    for key in ("nodes", "edges", "stats", "graph_data"):
-        assert files[key] is not None
-        assert files[key].exists()
-    # The interactive HTML viewer is deliberately no longer generated.
-    assert not (tmp_path / "4-processed" / "graph-docling" / "visualization.html").exists()
+@pytest.fixture()
+def empty_index(tmp_path: Path):
+    shutil.copytree(FIXTURES / "3-expanded", tmp_path / "3-expanded")
+    Bm25IndexBuilder(surse=[], data_dir=tmp_path).build()
+    index = LegalIndex(data_dir=tmp_path)
+    try:
+        yield index
+    finally:
+        index.close()
 
 
-def test_actions_tolerates_old_index(tmp_path: Path):
-    db = tmp_path / "law.db"
-    with sqlite3.connect(db) as connection:
-        connection.execute("CREATE TABLE docs(slug TEXT, version TEXT, html_rel TEXT)")
-    index = LegalIndex(db_path=db)
-    assert index.actions("D300") == []
-    index.close()
-
-
-def test_actions_matches_codes_with_separators(tmp_path: Path):
+def test_actions_matches_codes_with_separators(empty_index: LegalIndex):
     """A natural ``D212`` query must find a stored ``D_212_2736_2025`` code."""
-    db = tmp_path / "law.db"
-    with sqlite3.connect(db) as connection:
-        connection.execute(
-            "CREATE TABLE actions(doc_slug TEXT, code TEXT, title TEXT, "
-            "description TEXT, source_url TEXT, pdf_rel TEXT, xfa INT, "
-            "simple_pdf TEXT, artifact TEXT)"
-        )
-        connection.execute(
-            "INSERT INTO actions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                "declaratie-d-212-2736-2025",
-                "D_212_2736_2025",
-                "Declaratie unica",
-                "impozit pe venit si contributii sociale",
-                "https://example.invalid/d212.pdf",
-                "5-pdfs/declaratie-d-212-2736-2025/D_212_2736_2025.pdf",
-                1,
-                "",
-                "pdf",
-            ),
-        )
-    index = LegalIndex(db_path=db)
-    rows = index.actions("D212")
+    empty_index.actions_data = [
+        {
+            "doc_slug": "declaratie-d-212-2736-2025",
+            "code": "D_212_2736_2025",
+            "title": "Declaratie unica",
+            "description": "impozit pe venit si contributii sociale",
+            "source_url": "https://example.invalid/d212.pdf",
+            "pdf_rel": "5-pdfs/declaratie-d-212-2736-2025/D_212_2736_2025.pdf",
+            "xfa": 1,
+        }
+    ]
+    rows = empty_index.actions("D212")
     assert len(rows) == 1
     assert rows[0]["code"] == "D_212_2736_2025"
-    index.close()
+    assert rows[0]["link"].endswith(
+        "declaratie-d-212-2736-2025/D_212_2736_2025.pdf"
+    )
 
 
-def test_actions_fts_built_from_metadata_without_pdfs(tmp_path: Path):
-    """The FTS index is built only from the actions table, not from PDFs."""
-    from scrapper_legislatie_just.actions_fts import refresh_actions_fts
-
-    db = tmp_path / "law.db"
-    with sqlite3.connect(db) as connection:
-        connection.execute(
-            "CREATE TABLE actions(doc_slug TEXT, code TEXT, title TEXT, "
-            "description TEXT, source_url TEXT, pdf_rel TEXT, xfa INT, "
-            "simple_pdf TEXT, artifact TEXT)"
-        )
-        connection.execute(
-            "INSERT INTO actions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                "declaratie-d-212-2736-2025",
-                "D_212_2736_2025",
-                "Declaratie unica",
-                "impozit pe venit si contributii sociale",
-                "https://example.invalid/d212.pdf",
-                "5-pdfs/declaratie-d-212-2736-2025/D_212_2736_2025.pdf",
-                1,
-                "",
-                "pdf",
-            ),
-        )
-
-    result = refresh_actions_fts(db)
-    assert result["declarations"] == 1
-    assert result["applied"] is True
-
-    index = LegalIndex(db_path=db)
-    rows = index.actions("D212")
-    assert len(rows) == 1
-    assert rows[0]["code"] == "D_212_2736_2025"
-    index.close()
+def test_actions_without_index_data_returns_empty(empty_index: LegalIndex):
+    empty_index.actions_data = []
+    assert empty_index.actions("D300") == []
 
 
 def test_template_warnings_lists_missing_sections():

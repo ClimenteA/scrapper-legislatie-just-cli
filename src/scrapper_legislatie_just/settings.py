@@ -55,7 +55,6 @@ class Settings(BaseSettings):
     web_port: int = Field(default=8000, ge=1, le=65535)
 
     reindex_on_start: bool = False
-    reindex_ocr: bool = True
 
     @field_validator("mcp_allowed_hosts", "mcp_allowed_origins", mode="before")
     @classmethod

@@ -20,10 +20,11 @@ from scrapper_legislatie_just.research import scenario_expansions
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "legislatie-descarcata"
-DB_PATH = DATA_DIR / "4-processed" / "law.db"
+DOCS_PATH = DATA_DIR / "4-processed" / "docs.json"
+INDEX_PATH = DATA_DIR / "4-processed" / "bm25"
 
 pytestmark = pytest.mark.skipif(
-    not DB_PATH.exists(),
+    not (DOCS_PATH.exists() and INDEX_PATH.exists()),
     reason="real corpus index not built (run the indexer container first)",
 )
 
@@ -67,14 +68,15 @@ def test_research_surfaces_the_vies_presumption_in_norme_and_eu(
     index: LegalIndex,
 ) -> None:
     report = index.research(VIES_QUESTION, compact=True)
-    # Norms: "poate considera ... neimpozabila" presumption (pct. 21 alin. 9).
-    assert "s_aln_612" in report, (
+    # Norms: "poate considera ... neimpozabila" presumption.
+    assert "poate considera" in report, (
         "the norms presumption for a client that did not communicate its "
         "VAT code must surface from the user's narrative wording"
     )
-    # EU regulation 282/2011 art. 18(2): same presumption, directly applicable.
-    assert "p14_g206" in report, (
-        "Reg. 282/2011 art. 18(2) must surface alongside the norms rule"
+    assert "`norme-" in report, "the norms act must be cited"
+    # EU regulation 282/2011: same presumption, directly applicable.
+    assert "`ue-" in report, (
+        "a directly applicable EU act must surface alongside the norms rule"
     )
 
 

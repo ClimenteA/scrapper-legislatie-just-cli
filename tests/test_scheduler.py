@@ -42,17 +42,17 @@ def test_reindex_on_start_triggers_once(stub_indexer, monkeypatch):
     monkeypatch.setattr(
         scheduler,
         "get_settings",
-        lambda: SimpleNamespace(reindex_on_start=True, reindex_ocr=False),
+        lambda: SimpleNamespace(reindex_on_start=True),
     )
     scheduler.main()
-    assert stub_indexer == [{"force": False, "ocr": False}]
+    assert stub_indexer == [{"force": False}]
 
 
 def test_reindex_on_start_defaults_to_off(stub_indexer, monkeypatch):
     monkeypatch.setattr(
         scheduler,
         "get_settings",
-        lambda: SimpleNamespace(reindex_on_start=False, reindex_ocr=True),
+        lambda: SimpleNamespace(reindex_on_start=False),
     )
     scheduler.main()
     assert stub_indexer == []
